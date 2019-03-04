@@ -43,6 +43,12 @@
 
 /* TODO theme the local file browser */
 
+/* First time wizard */
+
+#givePassword {
+    text-align: right;
+}
+
 /* Toggleable areas: hovering over them shows the hidden part */
 
 .toggleable .hidden {

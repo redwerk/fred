@@ -1260,6 +1260,9 @@ public final class FProxyToadlet extends Toadlet implements RequestClient {
 		FirstTimeWizardToadlet firstTimeWizardToadlet = new FirstTimeWizardToadlet(client, node, core);
 		server.register(firstTimeWizardToadlet, null, FirstTimeWizardToadlet.TOADLET_URL, true, false);
 
+		FirstTimeWizToadlet firstTimeWizToadlet = new FirstTimeWizToadlet(client, node, core);
+		server.register(firstTimeWizToadlet, null, FirstTimeWizToadlet.TOADLET_URL, true, false);
+
 		SimpleHelpToadlet simpleHelpToadlet = new SimpleHelpToadlet(client, core);
 		server.register(simpleHelpToadlet, null, "/help/", true, false);
 
