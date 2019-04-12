@@ -308,6 +308,7 @@ public class LocationManager implements ByteCounter {
             // Because if we can't get lock they need to send a reject
 
             // Firstly, is their message valid?
+                System.out.println("    Validate swap request");
 
             byte[] hisHash = ((ShortBuffer)origMessage.getObject(DMT.HASH)).getData();
 
@@ -940,7 +941,19 @@ public class LocationManager implements ByteCounter {
         	htl = SWAP_MAX_HTL;
         }
         htl--;
+        System.out.println("    CHECK IS SWAPPING ENABLED");
+        System.out.println("node.enableSwapping: " + node.enableSwapping + "; htl: " + htl + "; swappingDisabled(): " + swappingDisabled());
         if(!node.enableSwapping || htl <= 0 && swappingDisabled()) {
+            System.out.println("    REJECT SWAPPING");
+            /**
+             * jvm 1    |     CHECK IS SWAPPING ENABLED
+             * jvm 1    | node.enableSwapping: true; htl: 5; swappingDisabled(): true
+             * jvm 1    |     FORWARD OR HANDLE SWAPPING
+             * jvm 1    | Forwarding
+             * jvm 1    |     CHECK IS SWAPPING ENABLED
+             * jvm 1    | node.enableSwapping: true; htl: 0; swappingDisabled(): true
+             * jvm 1    |     REJECT SWAPPING
+             */
             // Reject
             Message reject = DMT.createFNPSwapRejected(oldID);
             try {
@@ -950,13 +963,16 @@ public class LocationManager implements ByteCounter {
             }
             return true;
         }
+        System.out.println("    FORWARD OR HANDLE SWAPPING");
         // Either forward it or handle it
         if(htl <= 0) {
+            System.out.println("Accepting");
         	if(logMINOR) Logger.minor(this, "Accepting?... "+oldID);
             // Accept - handle locally
         	lockOrQueue(m, oldID, newID, pn);
         	return true;
         } else {
+            System.out.println("Forwarding");
             m.set(DMT.HTL, htl);
             m.set(DMT.UID, newID);
             if(logMINOR) Logger.minor(this, "Forwarding... "+oldID);

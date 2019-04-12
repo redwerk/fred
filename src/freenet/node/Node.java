@@ -1412,6 +1412,7 @@ public class Node implements TimeSkewDetectorCallback {
 			        }
 		});
 		enableSwapping = nodeConfig.getBoolean("enableSwapping");
+		System.out.println("    SWAPPING ENABLED");
 
 		/*
 		 * Publish our peers' locations is enabled, even in MAXIMUM network security and/or HIGH friends security,
