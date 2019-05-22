@@ -28,6 +28,53 @@ public class ClientCHKBlockTest extends TestCase {
 			checkBlock(fullBlock, true);
 		}
 	}
+
+	public void testEncodeDecodeShiftedFullBlock() throws CHKEncodeException, CHKDecodeException, IOException {
+		byte[] fullBlock = new byte[CHKBlock.DATA_LENGTH];
+		MersenneTwister random = new MersenneTwister(42);
+
+		// TODO: need to agree
+		int shiftLength = (int) (fullBlock.length * .3);
+
+		for(int i=0;i<10;i++) {
+			random.nextBytes(fullBlock);
+			int nShiftLength = shiftLength * (i + 1);
+
+			ClientCHKBlock encodedBlock = ClientCHKBlock.encode(new ArrayBucket(fullBlock), false, false,
+					(short)-1, fullBlock.length, null, false, null, Key.ALGO_AES_CTR_256_SHA256);
+			String originKey = encodedBlock.key.toString();
+
+			encodedBlock = ClientCHKBlock.encode(new ArrayBucket(rotate(fullBlock, nShiftLength)),
+					false, false,
+					(short)-1, fullBlock.length, null, false, null, Key.ALGO_AES_CTR_256_SHA256);
+			assertFalse(originKey.equals(encodedBlock.key.toString()));
+
+			ArrayBucket shiftedData = (ArrayBucket)
+					encodedBlock.decode(new ArrayBucketFactory(), fullBlock.length, false, true);
+			assertTrue(Arrays.equals(fullBlock, rotate(shiftedData.toByteArray(), -nShiftLength)));
+
+			System.out.println();
+		}
+	}
+
+	private byte[] rotate(byte[] bytes, int shift) {
+		shift = shift % bytes.length;
+
+		if (shift == 0)
+			return bytes;
+
+		byte[] result = new byte[bytes.length];
+		if (shift > 0) {
+			System.arraycopy(bytes, shift, result, 0, bytes.length - shift);
+			System.arraycopy(bytes, 0, result, bytes.length - shift, shift);
+		}
+		else {
+			shift = -shift;
+			System.arraycopy(bytes, bytes.length - shift, result, 0, shift);
+			System.arraycopy(bytes, 0, result, shift, bytes.length - shift);
+		}
+		return result;
+	}
 	
 	public void testEncodeDecodeShortInteger() throws CHKEncodeException, CHKVerifyException, CHKDecodeException, UnsupportedEncodingException, InvalidCompressionCodecException, IOException {	
 		for(int i=0;i<100;i++) {
