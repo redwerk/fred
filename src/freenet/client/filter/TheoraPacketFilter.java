@@ -88,29 +88,28 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 					break;
 
 				case IDENTIFICATION_FOUND:
-					magicHeader = new byte[1+magicNumber.length];
+					magicHeader = new byte[1 + magicNumber.length];
 					input.readFully(magicHeader);
-					Logger.minor(this, "Header type: "+magicHeader[0]);
-					if(magicHeader[0] != -127) throw new DataFilterException("Header type: " + magicHeader[0]);
+					Logger.minor(this, "Header type: " + magicHeader[0]);
+					if (magicHeader[0] != -127) throw new DataFilterException("Header type: " + magicHeader[0]);
 					try {
 						checkMagicHeader(magicHeader);
 					} catch (UnknownContentTypeException e) {
 						throw new DataFilterException(e.getType());
 					}
 
-					long vendor_length = decode32bitIntegerFrom8BitChunks(input); //Represents the vendor length
-					if(logMINOR) Logger.minor(this, "Vendor string is "+vendor_length+" bytes long");
-					for(long i = 0; i < vendor_length; i++) {
-						input.skipBytes(1);
-					}
-					long NCOMMENTS = decode32bitIntegerFrom8BitChunks(input); //Represents the number of comments
-					for(long i = 0; i < NCOMMENTS; i++) {
-						long comment_length = decode32bitIntegerFrom8BitChunks(input);
-						for(long j = 0; j < comment_length; j++) {
-							input.skipBytes(1);
-						}
+					// TODO: probably not true
+					long vendorLength = decode32bitIntegerFrom8BitChunks(input);
+					long skipped = input.skip(vendorLength);
+					if (logMINOR) Logger.minor(this, "Vendor str is " + vendorLength + " bytes, skipped " + skipped);
+					long numberOfComments = decode32bitIntegerFrom8BitChunks(input);
+					for (long i = 0; i < numberOfComments; i++) {
+						long commentLength = decode32bitIntegerFrom8BitChunks(input);
+						skipped = input.skip(commentLength);
+						if (logMINOR) Logger.minor(this, "Comment str is " + commentLength + " bytes, skipped " + skipped);
 					}
 
+					// TODO: write only magicHeader and 00? 122 to 15 bytes
 					try (ByteArrayOutputStream data = new ByteArrayOutputStream();
 						 DataOutputStream output = new DataOutputStream(data)) {
 						output.write(magicHeader);
@@ -118,13 +117,16 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 						output.writeInt(0);
 						packet = new CodecPacket(data.toByteArray());
 					}
-					currentState=State.COMMENT_FOUND;
+
+					// TODO: this disables filter
+					currentState = State.COMMENT_FOUND;
 					break;
+
 				case COMMENT_FOUND:
 					break;
 			}
 		} catch(IOException e) {
-			if(logMINOR) Logger.minor(this, "In theora parser caught "+e, e);
+			if (logMINOR) Logger.minor(this, "In Theora parser caught " + e, e);
 			throw e;
 		}
 
