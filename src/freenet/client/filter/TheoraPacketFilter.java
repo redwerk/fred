@@ -4,6 +4,7 @@ import java.io.*;
 
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
+import freenet.support.io.BitInputStream;
 
 public class TheoraPacketFilter implements CodecPacketFilter {
 	static final byte[] magicNumber = new byte[] {'t', 'h', 'e', 'o', 'r', 'a'};
@@ -14,9 +15,8 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 
 	public CodecPacket parse(CodecPacket packet) throws IOException {
 		// Assemble the Theora packets https://www.theora.org/doc/Theora.pdf
-		DataInputStream input = new DataInputStream(new ByteArrayInputStream(packet.payload));
+		BitInputStream input = new BitInputStream(new ByteArrayInputStream(packet.payload));
 		byte[] magicHeader = new byte[1 + magicNumber.length];
-		short unalignedBytes;
 		try {
 			switch(expectedPacket) {
 				case IDENTIFICATION_HEADER: // must be first
@@ -28,27 +28,25 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 					checkMagicHeader(magicHeader, (byte) 0x80); // -128
 
 					// Assemble identification header
-					int VMAJ = read8bit(input);
-					int VMIN = read8bit(input);
-					int VREV = read8bit(input);
-					int FMBW = read16bit(input);
-					int FMBH = read16bit(input);
-					int PICW = read24bit(input);
-					int PICH = read24bit(input);
-					int PICX = read8bit(input);
-					int PICY = read8bit(input);
-					int FRN = read32bit(input);
-					int FRD = read32bit(input);
-					int PARN = read24bit(input);
-					int PARD = read24bit(input);
-					int CS = read8bit(input);
-					int NOMBR = read24bit(input);
-
-					unalignedBytes = input.readShort();
-					byte QUAL = (byte) (unalignedBytes & 0x3f); // 6 bit 0b111111
-					byte KFGSHIFT = (byte) (unalignedBytes & 0x7C0); // 5 bit 0b11111000000
-					byte PF = (byte) (unalignedBytes & 0x1800); // 2 bit 0b1100000000000
-					byte Res = (byte) (unalignedBytes & 0xE000); // 3 bit 0b1110000000000000
+					int VMAJ = input.readInt(8);
+					int VMIN = input.readInt(8);
+					int VREV = input.readInt(8);
+					int FMBW = input.readInt(16);
+					int FMBH = input.readInt(16);
+					int PICW = input.readInt(24);
+					int PICH = input.readInt(24);
+					int PICX = input.readInt(8);
+					int PICY = input.readInt(8);
+					int FRN = input.readInt(32);
+					int FRD = input.readInt(32);
+					int PARN = input.readInt(24);
+					int PARD = input.readInt(24);
+					int CS = input.readInt(8);
+					int NOMBR = input.readInt(24);
+					int QUAL = input.readInt(6);
+					int KFGSHIFT = input.readInt(5);
+					int PF = input.readInt(2);
+					int Res = input.readInt(3);
 
 					if (VMAJ != 3) throw new UnknownContentTypeException("Header VMAJ: " + VMAJ);
 					if (VMIN != 2) throw new UnknownContentTypeException("Header VMIN: " + VMIN);
@@ -91,7 +89,7 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 					if (logMINOR)
 						Logger.minor(this, "COMMENT_HEADER contains " + input.available() + " redundant bytes");
 
-					// skip vendor string and comment
+					// skip vendor string and comments
 					try (ByteArrayOutputStream data = new ByteArrayOutputStream();
 						 DataOutputStream output = new DataOutputStream(data)) {
 						output.write(magicHeader);
@@ -132,27 +130,11 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 		return packet;
 	}
 
-	private int read8bit(DataInputStream input) throws IOException {
-		return input.readUnsignedByte();
-	}
-
-	private int read16bit(DataInputStream input) throws IOException {
-		return input.readShort();
-	}
-
-	private int read24bit(DataInputStream input) throws IOException {
-		return input.readShort() << 8 | input.readUnsignedByte();
-	}
-
-	private int read32bit(DataInputStream input) throws IOException {
-		return input.readInt();
-	}
-
-	private int decode32bitIntegerFrom8BitChunks(DataInputStream input) throws IOException {
-		int LEN0 = input.readUnsignedByte();
-		int LEN1 = input.readUnsignedByte();
-		int LEN2 = input.readUnsignedByte();
-		int LEN3 = input.readUnsignedByte();
+	private int decode32bitIntegerFrom8BitChunks(BitInputStream input) throws IOException {
+		int LEN0 = input.readInt(4);
+		int LEN1 = input.readInt(4);
+		int LEN2 = input.readInt(4);
+		int LEN3 = input.readInt(4);
 		return LEN0|(LEN1 << 8)|(LEN2 << 16)|(LEN3 << 24);
 	}
 
