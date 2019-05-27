@@ -1,6 +1,7 @@
 package freenet.client.filter;
 
 import java.io.*;
+import java.nio.ByteOrder;
 
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
@@ -73,14 +74,14 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 					input.readFully(magicHeader);
 					checkMagicHeader(magicHeader, (byte) 0x81); // -127
 
-					int vendorLength = decode32bitIntegerFrom8BitChunks(input);
+					int vendorLength = input.readInt(32, ByteOrder.LITTLE_ENDIAN);
 					byte[] vendor = new byte[vendorLength];
 					input.readFully(vendor);
 					if (logMINOR)
 						Logger.minor(this, "Vendor string is: " + new String(vendor));
-					int numberOfComments = decode32bitIntegerFrom8BitChunks(input);
+					int numberOfComments = input.readInt(32, ByteOrder.LITTLE_ENDIAN);
 					for (long i = 0; i < numberOfComments; i++) {
-						int commentLength = decode32bitIntegerFrom8BitChunks(input);
+						int commentLength = input.readInt(32, ByteOrder.LITTLE_ENDIAN);
 						byte[] comment = new byte[commentLength];
 						input.readFully(comment);
 						if (logMINOR)
@@ -128,14 +129,6 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 		}
 
 		return packet;
-	}
-
-	private int decode32bitIntegerFrom8BitChunks(BitInputStream input) throws IOException {
-		int LEN0 = input.readInt(4);
-		int LEN1 = input.readInt(4);
-		int LEN2 = input.readInt(4);
-		int LEN3 = input.readInt(4);
-		return LEN0|(LEN1 << 8)|(LEN2 << 16)|(LEN3 << 24);
 	}
 
 	private void checkMagicHeader(byte[] typeAndMagicHeader, byte expectedType) throws IOException {
