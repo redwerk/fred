@@ -1,11 +1,14 @@
 package freenet.client.filter;
 
+import freenet.support.Logger;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
 public class TheoraBitstreamFilter extends OggBitstreamFilter {
 	private final TheoraPacketFilter parser;
+	private boolean logMINOR = Logger.shouldLog(Logger.LogLevel.MINOR, this);
 
 	protected TheoraBitstreamFilter(OggPage page) {
 		super(page);
@@ -21,6 +24,8 @@ public class TheoraBitstreamFilter extends OggBitstreamFilter {
 			try {
 				parsedPackets.add(parser.parse(packet));
 			} catch (DataFilterException ignored) { // skip packet
+				if (logMINOR)
+					Logger.minor(this, ignored.getLocalizedMessage());
 			}
 		}
 		page = new OggPage(page, parsedPackets);
