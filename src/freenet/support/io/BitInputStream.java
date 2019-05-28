@@ -91,9 +91,13 @@ public class BitInputStream implements Closeable {
         if (bitOrder == ByteOrder.BIG_ENDIAN)
             for (int i = 0; i < length; i++)
                 value = value << 1 | readBit();
-        else
+        else {
+            if (length % 8 == 0)
+                throw new UnsupportedOperationException("Not implemented, yet");
+
             for (int i = 0; i < length; i++)
                 value |= readBit() << i;
+        }
 
         return value;
     }

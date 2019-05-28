@@ -123,7 +123,7 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 					input.readFully(magicHeader);
 					checkMagicHeader(magicHeader, (byte) 0x82); // -126
 
-					// TODO: end of page 50
+					// TODO: end of page 50 - missing algorithm
 					if (logMINOR)
 						Logger.minor(this, "SETUP_HEADER: available " + input.available() + " bytes");
 
@@ -173,7 +173,7 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 //									plj = pli;
 //								}
 //								else {
-//									qtj = (3 * qti + pli - 1) / 3;
+////									qtj = (3 * qti + pli - 1) // 3; // TODO: See conventions - Integer division
 //									plj = (pli + 2) % 3;
 //								}
 //
@@ -185,7 +185,7 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 //								int qri = 0;
 //								int qi = 0;
 //
-//								// TODO: page 54 point C - ilog(NBMS − 1)-bit
+//								// TODO: page 54 point C - ilog(NBMS − 1) See conventions
 ////								QRBMIS[qti][pli][qri] =
 //							}
 //						}
@@ -242,9 +242,7 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 					}
 
 					FTYPE = input.readBit();
-					if (FTYPE == 0) // TODO: Perhaps this may be INTRA_FRAME
-
-					break;
+//					if (FTYPE == 0) // TODO: Perhaps this may be INTRA_FRAME
 			}
 		} catch(IOException e) {
 			if (logMINOR) Logger.minor(this, "In Theora parser caught " + e, e);
@@ -258,7 +256,7 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 		if (logMINOR) Logger.minor(this, "Header type: " + typeAndMagicHeader[0]);
 
 		if (typeAndMagicHeader[0] != expectedType)
-			throw new UnknownContentTypeException("First header type: " + typeAndMagicHeader[0] + ", expected: " + expectedType);
+			throw new UnknownContentTypeException("Header type: " + typeAndMagicHeader[0] + ", expected: " + expectedType);
 
 		for (int i=0; i < magicNumber.length; i++) {
 			if (typeAndMagicHeader[i+1] != magicNumber[i])
