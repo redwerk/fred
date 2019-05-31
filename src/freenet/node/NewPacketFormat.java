@@ -31,7 +31,7 @@ import static java.util.concurrent.TimeUnit.MINUTES;
 
 public class NewPacketFormat implements PacketFormat {
 
-	private static final int HMAC_LENGTH = 10;
+	static final int HMAC_LENGTH = 10;
 	// FIXME Use a more efficient structure - int[] or maybe just a big byte[].
 	// FIXME increase this significantly to let it ride over network interruptions.
 	private static final int NUM_SEQNUMS_TO_WATCH_FOR = 1024;
@@ -42,7 +42,7 @@ public class NewPacketFormat implements PacketFormat {
 	private static final int NUM_MESSAGE_IDS = 268435456;
 	static final long NUM_SEQNUMS = 2147483648l;
 	private static final long MAX_MSGID_BLOCK_TIME = MINUTES.toMillis(10);
-	private static final int MAX_ACKS = 500;
+	static final int MAX_ACKS = 500;
 	static boolean DO_KEEPALIVES = true;
 
 	private static volatile boolean logMINOR;
@@ -562,8 +562,8 @@ public class NewPacketFormat implements PacketFormat {
 		return true;
 	}
 
-	NPFPacket createPacket(int maxPacketSize, PeerMessageQueue messageQueue, SessionKey sessionKey, boolean ackOnly) throws BlockedTooLongException {
-		
+	NPFPacket createPacket(int maxPacketSize, MessageQueue messageQueue, SessionKey sessionKey, boolean ackOnly)
+			throws BlockedTooLongException {
 		checkForLostPackets();
 		
 		NPFPacket packet = new NPFPacket();

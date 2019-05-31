@@ -89,6 +89,7 @@ import freenet.l10n.NodeL10n;
 import freenet.node.DarknetPeerNode.FRIEND_TRUST;
 import freenet.node.DarknetPeerNode.FRIEND_VISIBILITY;
 import freenet.node.NodeDispatcher.NodeDispatcherCallback;
+import freenet.node.NodeStarter.TestNodeParameters;
 import freenet.node.OpennetManager.ConnectionType;
 import freenet.node.SecurityLevels.NETWORK_THREAT_LEVEL;
 import freenet.node.SecurityLevels.PHYSICAL_THREAT_LEVEL;
@@ -755,6 +756,9 @@ public class Node implements TimeSkewDetectorCallback {
 	private boolean storePreallocate;
 	
 	private boolean enableRoutedPing;
+	
+	/** Copied here since expensive to access on NodeStats itself. */
+	public final boolean isTestingVM;
 
 	/**
 	 * Minimum bandwidth limit in bytes considered usable: 10 KiB. If there is an attempt to set a limit below this -
@@ -777,6 +781,12 @@ public class Node implements TimeSkewDetectorCallback {
 	public static int getMinimumBandwidth() {
 		return minimumBandwidth;
 	}
+	
+    /** One in this many successful requests is randomly reinserted. 0 means never.
+     * This is probably a good idea anyway but with the split store it's essential. */
+    public static final int DEFAULT_RANDOM_REINSERT_INTERVAL = 200;
+    
+    private final int randomReinsertInterval;
 
 	/**
 	 * Returns an exception with an explanation that the given bandwidth limit is too low.
@@ -957,8 +967,10 @@ public class Node implements TimeSkewDetectorCallback {
 	 * @param executor Executor
 	 * @throws NodeInitException If the node initialization fails.
 	 */
-	 Node(PersistentConfig config, RandomSource r, RandomSource weakRandom, LoggingConfigHandler lc, NodeStarter ns, Executor executor) throws NodeInitException {
+	 Node(PersistentConfig config, RandomSource r, RandomSource weakRandom, LoggingConfigHandler lc, 
+	         NodeStarter ns, Executor executor, PrioritizedTicker ticker, TestNodeParameters testingParameters) throws NodeInitException {
 		this.shutdownHook = SemiOrderedShutdownHook.get();
+		this.isTestingVM = NodeStarter.isTestingVM();
 		// Easy stuff
 		String tmp = "Initializing Node using Freenet Build #"+Version.buildNumber()+" r"+Version.cvsRevision()+" and freenet-ext Build #"+NodeStarter.extBuildNumber+" r"+NodeStarter.extRevisionNumber+" with "+System.getProperty("java.vendor")+" JVM version "+System.getProperty("java.version")+" running on "+System.getProperty("os.arch")+' '+System.getProperty("os.name")+' '+System.getProperty("os.version");
 		fixCertsFiles();
@@ -966,6 +978,7 @@ public class Node implements TimeSkewDetectorCallback {
 		System.out.println(tmp);
 		collector = new IOStatisticCollector();
 		this.executor = executor;
+		this.ticker = ticker;
 		nodeStarter=ns;
 		if(logConfigHandler != lc)
 			logConfigHandler=lc;
@@ -1491,7 +1504,6 @@ public class Node implements TimeSkewDetectorCallback {
 		// Must be created after darknetCrypto
 		dnsr = new DNSRequester(this);
 		ps = new PacketSender(this);
-		ticker = new PrioritizedTicker(executor, getDarknetPortNumber());
 		if(executor instanceof PooledExecutor)
 			((PooledExecutor)executor).setTicker(ticker);
 
@@ -1650,8 +1662,19 @@ public class Node implements TimeSkewDetectorCallback {
 		// Then read the peers
 		peers = new PeerManager(this, shutdownHook);
 		
-		tracker = new RequestTracker(peers, ticker);
+		if(testingParameters != null && testingParameters.requestTrackerSnooper != null) {
+		    tracker = new SnoopingRequestTracker(peers, ticker, this, 
+		            testingParameters.requestTrackerSnooper);
+		} else {
+		    tracker = new RequestTracker(peers, ticker);
+		}
 
+		if(testingParameters != null) {
+		    randomReinsertInterval = testingParameters.randomReinsertInterval;
+		} else {
+		    randomReinsertInterval = DEFAULT_RANDOM_REINSERT_INTERVAL;
+		}
+		
 		usm.setDispatcher(dispatcher=new NodeDispatcher(this));
 
 		uptime = new UptimeEstimator(runDir, ticker, darknetCrypto.identityHash);
@@ -2987,6 +3010,8 @@ public class Node implements TimeSkewDetectorCallback {
 	}
 
 	public void start(boolean noSwaps) throws NodeInitException {
+	    boolean enableTransportLayer = 
+	        !(NodeStarter.isTestingVM() && NodeStarter.isMessageQueueBypassEnabled());
 		
 		// IMPORTANT: Read the peers only after we have finished initializing Node.
 		// Peer constructors are complex and can call methods on Node.
@@ -2994,17 +3019,20 @@ public class Node implements TimeSkewDetectorCallback {
 		peers.updatePMUserAlert();
 		
 		dispatcher.start(nodeStats); // must be before usm
-		dnsr.start();
+		if(enableTransportLayer)
+		    dnsr.start();
 		peers.start(); // must be before usm
 		nodeStats.start();
 		uptime.start();
 		failureTable.start();
 
-		darknetCrypto.start();
+		if(enableTransportLayer)
+		    darknetCrypto.start(); // Starts socket etc
 		if(opennet != null)
 			opennet.start();
-		ps.start(nodeStats);
-		ticker.start();
+		if(enableTransportLayer)
+		    ps.start(nodeStats);
+		ticker.start(getDarknetPortNumber());
 		scheduleVersionTransition();
 		usm.start(ticker);
 
@@ -3024,7 +3052,8 @@ public class Node implements TimeSkewDetectorCallback {
 //		SubConfig pluginManagerConfig = new SubConfig("pluginmanager3", config);
 //		pluginManager3 = new freenet.plugin_new.PluginManager(pluginManagerConfig);
 
-		ipDetector.start();
+		if(enableTransportLayer)
+		    ipDetector.start();
 
 		// Start sending swaps
 		lm.start();
@@ -3600,6 +3629,7 @@ public class Node implements TimeSkewDetectorCallback {
 	}
 
 	private void store(CHKBlock block, boolean deep, boolean canWriteClientCache, boolean canWriteDatastore, boolean forULPR) {
+	    if(logMINOR) Logger.minor(this, "Store "+block+", "+deep+", "+canWriteClientCache+", "+canWriteDatastore+", "+forULPR);
 		try {
 			double loc = block.getKey().toNormalizedDouble();
 			if (canWriteClientCache) {
@@ -3648,6 +3678,7 @@ public class Node implements TimeSkewDetectorCallback {
 	}
 
 	public void store(SSKBlock block, boolean deep, boolean overwrite, boolean canWriteClientCache, boolean canWriteDatastore, boolean forULPR) throws KeyCollisionException {
+	    if(logMINOR) Logger.minor(this, "Store "+block+", "+deep+", "+canWriteClientCache+", "+canWriteDatastore+", "+forULPR);
 		try {
 			// Store the pubkey before storing the data, otherwise we can get a race condition and
 			// end up deleting the SSK data.
@@ -4121,10 +4152,12 @@ public class Node implements TimeSkewDetectorCallback {
 	public boolean isHasStarted() {
 		return hasStarted;
 	}
-
-	public void queueRandomReinsert(KeyBlock block) {
-		clientCore.queueRandomReinsert(block);
-	}
+	
+    public void maybeQueueRandomReinsert(KeyBlock block) {
+        if(randomReinsertInterval == 0) return;
+        if(random.nextInt(randomReinsertInterval) == 0)
+            clientCore.queueRandomReinsert(block);
+    }
 
 	public String getExtraPeerDataDir() {
 		return extraPeerDataDir.getPath();

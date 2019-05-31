@@ -87,6 +87,10 @@ public class RequestTracker {
 		transferringRequestHandlers = new HashSet<Long>();
 	}
 
+	/** Lock a UID.
+	 * @param tag The UIDTag to lock.
+	 * @return True if the UID was locked successfully. False if the UID was already in
+	 * use. */
 	public boolean lockUID(UIDTag tag) {
 		return lockUID(tag.uid, tag.isSSK(), tag.isInsert(), tag.isOfferReply(), tag.wasLocal(), tag.realTimeFlag, tag);
 	}
@@ -768,13 +772,6 @@ public class RequestTracker {
 		synchronized(runningUIDs) {
 			list.addAll(runningUIDs.keySet());
 		}
-	}
-
-	public int getTotalRunningUIDsAlt() {
-		return this.runningCHKGetUIDsRT.size() + this.runningCHKPutUIDsRT.size() + this.runningSSKGetUIDsRT.size() +
-		this.runningSSKPutUIDsRT.size() + this.runningSSKOfferReplyUIDsRT.size() + this.runningCHKOfferReplyUIDsRT.size() +
-		this.runningCHKGetUIDsBulk.size() + this.runningCHKPutUIDsBulk.size() + this.runningSSKGetUIDsBulk.size() +
-		this.runningSSKPutUIDsBulk.size() + this.runningSSKOfferReplyUIDsBulk.size() + this.runningCHKOfferReplyUIDsBulk.size();
 	}
 
 	private ArrayList<Long> completedBuffer = new ArrayList<Long>();

@@ -1,6 +1,7 @@
 package freenet.node;
 
 import freenet.io.comm.AsyncMessageCallback;
+import freenet.support.Logger;
 
 /** Groups a set of message sends together so that we get a single sent(boolean)
  * callback after all the messages have been sent, and then later a finished(boolean).
@@ -20,6 +21,11 @@ import freenet.io.comm.AsyncMessageCallback;
  * pn.sendAsync(m2, mcb.make(), ctr);
  * mcb.arm();</pre> */
 public abstract class MultiMessageCallback {
+    
+    private static volatile boolean logMINOR;
+    static {
+        Logger.registerClass(MultiMessageCallback.class);
+    }
 	
     /** Number of messages that have not yet completed */
 	private int waiting;
@@ -50,6 +56,8 @@ public abstract class MultiMessageCallback {
 				
 				@Override
 				public void sent() {
+                    if(logMINOR) Logger.minor(this, "sent() on "+this+" for "+
+                            MultiMessageCallback.this);
 					boolean success;
 					synchronized(MultiMessageCallback.this) {
 						if(finished || sent) return;
@@ -59,6 +67,8 @@ public abstract class MultiMessageCallback {
                         if(!armed) return;
 						success = !someFailed;
 					}
+					if(logMINOR) Logger.minor(this, "sent() calling sent() for "+this+" for "+
+					        MultiMessageCallback.this);
 					MultiMessageCallback.this.sent(success);
 				}
 
@@ -78,6 +88,8 @@ public abstract class MultiMessageCallback {
 				}
 				
 				private void complete(boolean success) {
+				    if(logMINOR) Logger.minor(this, "Complete("+success+") on "+this+" for "+
+				            MultiMessageCallback.this);
 					boolean callSent = false;
 					synchronized(MultiMessageCallback.this) {
 						if(finished) return;
@@ -93,8 +105,11 @@ public abstract class MultiMessageCallback {
 						if(!finished()) return;
 						if(someFailed) success = false;
 					}
-					if(callSent)
+					if(callSent) {
+					    if(logMINOR) Logger.minor(this, "complete() calling sent() for "+this+
+					            " for "+MultiMessageCallback.this);
 						MultiMessageCallback.this.sent(success);
+					}
 					finish(success);
 				}
 				
@@ -118,7 +133,11 @@ public abstract class MultiMessageCallback {
 			if(waitingForSend == 0) callSent = true;
 			success = !someFailed;
 		}
-		if(callSent) sent(success);
+		if(callSent) {
+            if(logMINOR) Logger.minor(this, "arm() calling sent() for "+this+
+                    " for "+MultiMessageCallback.this);
+		    sent(success);
+		}
 		if(complete) finish(success);
 	}
 	

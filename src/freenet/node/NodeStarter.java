@@ -9,6 +9,8 @@ import org.tanukisoftware.wrapper.WrapperManager;
 import java.io.File;
 import java.io.IOException;
 import java.security.SecureRandom;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 
@@ -20,6 +22,8 @@ import freenet.crypt.JceLoader;
 import freenet.crypt.RandomSource;
 import freenet.crypt.SSL;
 import freenet.crypt.Yarrow;
+import freenet.node.SecurityLevels.PHYSICAL_THREAT_LEVEL;
+import freenet.support.ByteArrayWrapper;
 import freenet.support.Executor;
 import freenet.support.JVMVersion;
 import freenet.support.Logger;
@@ -27,7 +31,9 @@ import freenet.support.Logger.LogLevel;
 import freenet.support.LoggerHook.InvalidThresholdException;
 import freenet.support.PooledExecutor;
 import freenet.support.ProcessPriority;
+import freenet.support.PrioritizedTicker;
 import freenet.support.SimpleFieldSet;
+import freenet.support.Ticker;
 import freenet.support.io.NativeThread;
 
 import static java.util.concurrent.TimeUnit.MINUTES;
@@ -62,6 +68,21 @@ public class NodeStarter implements WrapperListener {
 
 	private static boolean isTestingVM;
 	private static boolean isStarted;
+	public enum TestingVMBypass {
+	    /** Do not attempt to bypass the transport layer */
+	    NONE,
+	    /** Deliver messages immediately to the destination Node */
+	    FAST_QUEUE_BYPASS,
+	    /** Message bypass simulating a constant bitrate link */
+	    CBR_QUEUE_BYPASS,
+	    /** Packet level bypass, has accurate bandwidth sharing and PacketSender */
+	    PACKET_BYPASS
+	}
+	private static TestingVMBypass testingVMEnableBypassConnections;
+	private static final Map<ByteArrayWrapper, Node> testingVMNodesByPubKeyHash = 
+	        new HashMap<ByteArrayWrapper, Node>();
+    private static final Map<ByteArrayWrapper, TestNodeParameters> testingVMNodeParametersByPubKeyHash = 
+            new HashMap<ByteArrayWrapper, TestNodeParameters>();
 
 	/** If false, this is some sort of multi-node testing VM */
 	public synchronized static boolean isTestingVM() {
@@ -190,8 +211,9 @@ public class NodeStarter implements WrapperListener {
 		SubConfig sslConfig = cfg.createSubConfig("ssl");
 		SSL.init(sslConfig);
 
+		PrioritizedTicker ticker = new PrioritizedTicker(executor);
 		try {
-			node = new Node(cfg, null, null, logConfigHandler, this, executor);
+			node = new Node(cfg, null, null, logConfigHandler, this, executor, ticker, null);
 			node.start(false);
 			System.out.println("Node initialization completed.");
 		} catch(NodeInitException e) {
@@ -281,7 +303,7 @@ public class NodeStarter implements WrapperListener {
     public static RandomSource globalTestInit(String testName, boolean enablePlug,
             LogLevel logThreshold, String details, boolean noDNS) throws InvalidThresholdException {
 
-        return globalTestInit(new File(testName), enablePlug, logThreshold, details, noDNS, null);
+        return globalTestInit(new File(testName), enablePlug, logThreshold, details, noDNS, TestingVMBypass.NONE, null);
     }
 
 	/**
@@ -307,13 +329,15 @@ public class NodeStarter implements WrapperListener {
      *         {@link Yarrow} is returned.
 	 */
     public static RandomSource globalTestInit(File baseDirectory, boolean enablePlug,
-            LogLevel logThreshold, String details, boolean noDNS, RandomSource randomSource)
+            LogLevel logThreshold, String details, boolean noDNS, TestingVMBypass enableBypassConnections,
+            RandomSource randomSource)
                 throws InvalidThresholdException {
 
 		synchronized(NodeStarter.class) {
 			if(isStarted) throw new IllegalStateException();
 			isStarted = true;
 			isTestingVM = true;
+			testingVMEnableBypassConnections = enableBypassConnections;
 		}
 
         if((!baseDirectory.mkdir()) && ((!baseDirectory.exists())
@@ -396,7 +420,8 @@ public class NodeStarter implements WrapperListener {
     public static final class TestNodeParameters {
         /** The UDP port number. Each test node must have a different port number. */
         public int port;
-        /** The UDP opennet port number. Each test node must have a different port number. */
+        /** The UDP opennet port number. Each test node must have a different port number,
+         * but this can be 0 if we are only using darknet (which is usually true for tests). */
         public int opennetPort;
         /** The directory where the test node will put all its data. <br>
          *  Will be created automatically if it does not exist.<br>
@@ -413,9 +438,11 @@ public class NodeStarter implements WrapperListener {
         public File baseDirectory = new File("freenet-test-node-" + UUID.randomUUID().toString());
         public boolean disableProbabilisticHTLs;
         public short maxHTL;
+        /** Probability of dropping a packet randomly, or 0. */
         public int dropProb;
         public RandomSource random;
         public Executor executor;
+        public PrioritizedTicker ticker;
         public int threadLimit = 500;
         public long storeSize;
         public boolean ramStore;
@@ -430,9 +457,24 @@ public class NodeStarter implements WrapperListener {
         public boolean connectToSeednodes;
         public boolean longPingTimes;
         public boolean useSlashdotCache;
-        public String ipAddressOverride;
+        public String ipAddressOverride = "127.0.0.1";
         public boolean enableFCP;
+        /** True to write everything to the datastore. By default, we only cache requests with HTL 
+         * at least 3 below the maximum, see Node.canWriteDatastoreInsert(). This is a security
+         * setting that makes sense for large networks. For simulations we can either cache 
+         * everything (writeLocalToDatastore=true), or set the HTL high enough that the low-HTL
+         * part of the insert will coincide with the request path, in which case the "fork on
+         * cacheable" request flag is necessary. */
+        public boolean writeLocalToDatastore;
+        /** Simulated per-link bandwidth limit if doing CBR message queue bypass */
+        public int bypassCBRBandwidthLimit = 1000;
+        /** Simulate per-link one-way transport latency */
+        public int bypassCBRDelay = 100;
         public boolean enablePlugins;
+        public boolean lazyStartRequestStarters = true;
+        public boolean lazyStartDatastoreChecker = true;
+        public RequestTrackerSnooper requestTrackerSnooper = null;
+        public int randomReinsertInterval = Node.DEFAULT_RANDOM_REINSERT_INTERVAL;
     }
 
     /**
@@ -464,6 +506,7 @@ public class NodeStarter implements WrapperListener {
         params.dropProb = dropProb;
         params.random = random;
         params.executor = executor;
+        params.ticker = new PrioritizedTicker(executor);
         params.threadLimit = threadLimit;
         params.storeSize = storeSize;
         params.ramStore = ramStore;
@@ -499,7 +542,7 @@ public class NodeStarter implements WrapperListener {
         File baseDir = params.baseDirectory;
         File portDir = new File(baseDir, Integer.toString(params.port));
 		if((!portDir.mkdir()) && ((!portDir.exists()) || (!portDir.isDirectory()))) {
-			System.err.println("Cannot create directory for test");
+			System.err.println("Cannot create directory "+portDir+" for test");
 			System.exit(NodeInitException.EXIT_TEST_ERROR);
 		}
 
@@ -551,6 +594,7 @@ public class NodeStarter implements WrapperListener {
         configFS.put("node.enablePacketCoalescing", params.enablePacketCoalescing);
         configFS.put("node.publishOurPeersLocation", params.enableFOAF);
         configFS.put("node.routeAccordingToOurPeersLocation", params.enableFOAF);
+        configFS.put("node.writeLocalToDatastore", params.writeLocalToDatastore);
         configFS.put("node.opennet.enabled", params.opennetPort > 0);
         configFS.put("node.opennet.listenPort", params.opennetPort);
 		configFS.put("node.opennet.alwaysAllowLocalAddresses", true);
@@ -573,13 +617,24 @@ public class NodeStarter implements WrapperListener {
 		configFS.put("node.respondLocation", true);
 		configFS.put("node.respondStoreSize", true);
 		configFS.put("node.respondUptime", true);
-
+        configFS.put("node.scheduler.lazyStart", params.lazyStartRequestStarters);
+        configFS.put("node.lazyStartDatastoreChecker", params.lazyStartDatastoreChecker);
+        configFS.putSingle("security-levels.physicalThreatLevel", PHYSICAL_THREAT_LEVEL.MAXIMUM.toString());
+        
 		PersistentConfig config = new PersistentConfig(configFS);
 
-        Node node = new Node(config, params.random, params.random, null, null, params.executor);
+        Node node = new Node(config, params.random, params.random, null, null, params.executor, params.ticker, params);
 
 		//All testing environments connect the nodes as they want, even if the old setup is restored, it is not desired.
 		node.peers.removeAllPeers();
+		
+		synchronized(NodeStarter.class) {
+		    if(testingVMEnableBypassConnections != TestingVMBypass.NONE) {
+		        ByteArrayWrapper key = new ByteArrayWrapper(node.darknetCrypto.ecdsaPubKeyHash);
+		        testingVMNodesByPubKeyHash.put(key, node);
+		        testingVMNodeParametersByPubKeyHash.put(key, params);
+		    }
+		}
 
 		return node;
 	}
@@ -642,5 +697,42 @@ public class NodeStarter implements WrapperListener {
 	    }
 	    return globalSecureRandom;
 	}
+
+	/** If we are running a simulation with multiple nodes in one VM, and if bypass messaging is
+	 * enabled, then look up a Node by its pubKeyHash. */
+    public static Node maybeGetNode(byte[] pubKeyHash) {
+        synchronized(NodeStarter.class) {
+            assert(isTestingVM());
+            if(testingVMEnableBypassConnections != TestingVMBypass.NONE)
+                return testingVMNodesByPubKeyHash.get(new ByteArrayWrapper(pubKeyHash));
+            return null;
+        }
+    }
+    
+    public static TestNodeParameters maybeGetNodeParameters(byte[] pubKeyHash) {
+        synchronized(NodeStarter.class) {
+            assert(isTestingVM());
+            if(testingVMEnableBypassConnections != TestingVMBypass.NONE)
+                return testingVMNodeParametersByPubKeyHash.get(new ByteArrayWrapper(pubKeyHash));
+            return null;
+        }
+    }
+    
+    public synchronized static boolean isCBRMessageQueueBypass() {
+        assert(isTestingVM());
+        return testingVMEnableBypassConnections == TestingVMBypass.CBR_QUEUE_BYPASS;
+    }
+    
+    public synchronized static boolean isMessageQueueBypassEnabled() {
+        assert(isTestingVM());
+        return testingVMEnableBypassConnections == TestingVMBypass.CBR_QUEUE_BYPASS ||
+            testingVMEnableBypassConnections == TestingVMBypass.FAST_QUEUE_BYPASS;
+        
+    }
+
+    public synchronized static boolean isPacketBypassEnabled() {
+        assert(isTestingVM());
+        return testingVMEnableBypassConnections == TestingVMBypass.PACKET_BYPASS;
+    }
 
 }

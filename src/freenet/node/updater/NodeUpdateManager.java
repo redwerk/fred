@@ -201,6 +201,7 @@ public class NodeUpdateManager {
 	 * deploying.
 	 */
 	private Bucket maybeNextMainJarData;
+	private boolean startedSimpleFetches;
 	
 	private static final Object deployLock = new Object();
 	
@@ -529,7 +530,18 @@ public class NodeUpdateManager {
 
 		node.clientCore.alerts.register(alert);
 		
+		revocationChecker.checkForBlobOnDisk();
 		enable(wasEnabledOnStartup);
+	}
+
+	/** Start simple fetches needed by the node: The latest version of the seednodes, the installer
+	 * and the IP to country file. */
+	private void startSimpleFetches() {
+	    // Fetch 3 files, each to a file in the runDir.
+	    synchronized(this) {
+	        if(startedSimpleFetches) return;
+	        startedSimpleFetches = true;
+	    }
 
 		// Fetch seednodes to the nodeDir.
 		if (updateSeednodes) {
@@ -548,12 +560,12 @@ public class NodeUpdateManager {
 			SimplePuller wininstallerGetter = new SimplePuller(
 					getInstallerWindowsURI(), NodeFile.InstallerWindows);
 
-			installerGetter.start(RequestStarter.UPDATE_PRIORITY_CLASS,
-					32 * 1024 * 1024);
-			wininstallerGetter.start(RequestStarter.UPDATE_PRIORITY_CLASS,
-					32 * 1024 * 1024);
+            installerGetter.start(RequestStarter.UPDATE_PRIORITY_CLASS,
+                    32 * 1024 * 1024);
+            wininstallerGetter.start(RequestStarter.UPDATE_PRIORITY_CLASS,
+                    32 * 1024 * 1024);
 
-		}
+        }
 
 		if (updateIPToCountry) {
 			SimplePuller ip4Getter = new SimplePuller(getIPv4ToCountryURI(),
@@ -564,7 +576,7 @@ public class NodeUpdateManager {
 		
 	}
 
-	void broadcastUOMAnnouncesOld() {
+    void broadcastUOMAnnouncesOld() {
 		boolean mainJarAvailable = transitionMainJarFetcher == null ? false
 				: transitionMainJarFetcher.fetched();
 		Message msg;
@@ -697,13 +709,6 @@ public class NodeUpdateManager {
 		// }
 		NodeUpdater main = null;
 		Map<String, PluginJarUpdater> oldPluginUpdaters = null;
-		// We need to run the revocation checker even if auto-update is
-		// disabled.
-		// Two reasons:
-		// 1. For the benefit of other nodes, and because even if auto-update is
-		// off, it's something the user should probably know about.
-		// 2. When the key is blown, we turn off auto-update!!!!
-		revocationChecker.start(false);
 		synchronized (this) {
 			boolean enabled = (mainUpdater != null);
 			if (enabled == enable)
@@ -737,6 +742,8 @@ public class NodeUpdateManager {
 			stopPluginUpdaters(oldPluginUpdaters);
 			transitionMainJarFetcher.stop();
 		} else {
+		    revocationChecker.start(false);
+
 			// FIXME copy it, dodgy locking.
 			try {
 				// Must be run before starting everything else as it cleans up tempfiles too.
@@ -750,6 +757,7 @@ public class NodeUpdateManager {
 			mainUpdater.start();
 			startPluginUpdaters();
 			transitionMainJarFetcher.start();
+			startSimpleFetches();
 		}
 	}
 

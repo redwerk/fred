@@ -61,6 +61,7 @@ import freenet.keys.ClientSSK;
 import freenet.keys.FreenetURI;
 import freenet.keys.Key;
 import freenet.keys.USK;
+import freenet.node.NodeStarter.TestNodeParameters;
 import freenet.node.NodeStats.PeerLoadStats;
 import freenet.node.NodeStats.RequestType;
 import freenet.node.NodeStats.RunningRequestsSnapshot;
@@ -239,7 +240,7 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 	final PeerManager peers;
 	/** MessageItem's to send ASAP.
 	 * LOCKING: Lock on self, always take that lock last. Sometimes used inside PeerNode.this lock. */
-	private final PeerMessageQueue messageQueue;
+	private final MessageQueue messageQueue;
 	/** When did we last receive a SwapRequest? */
 	private long timeLastReceivedSwapRequest;
 	/** Average interval between SwapRequest's */
@@ -617,7 +618,13 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 		swapRequestsInterval = new SimpleRunningAverage(50, Node.MIN_INTERVAL_BETWEEN_INCOMING_SWAP_REQUESTS);
 		probeRequestsInterval = new SimpleRunningAverage(50, Node.MIN_INTERVAL_BETWEEN_INCOMING_PROBE_REQUESTS);
 
-		messageQueue = new PeerMessageQueue();
+		messageQueue = makeMessageQueue(node, crypto, peerECDSAPubKeyHash);
+		if(node.isTestingVM && NodeStarter.isPacketBypassEnabled()) {
+		    // Create the BypassPacketFormat now to let fakeConnect() work.
+		    // packetFormat often persists between connections so this should be OK.
+		    packetFormat = PeerNode.makePacketFormat(this, messageQueue, 0, 0, node, crypto, 
+		            crypto.ecdsaPubKeyHash, peerECDSAPubKeyHash);
+		}
 
 		decrementHTLAtMaximum = node.random.nextFloat() < Node.DECREMENT_AT_MAX_PROB;
 		decrementHTLAtMinimum = node.random.nextFloat() < Node.DECREMENT_AT_MIN_PROB;
@@ -709,6 +716,9 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 
 		else
 			sendHandshakeTime = now;  // Be sure we're ready to handshake right away
+		
+		if(neverHandshake())
+		    sendHandshakeTime = Long.MAX_VALUE;
 
 		bytesInAtStartup = fs.getLong("totalInput", 0);
 		bytesOutAtStartup = fs.getLong("totalOutput", 0);
@@ -728,7 +738,43 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 	// status may have changed from PEER_NODE_STATUS_DISCONNECTED to PEER_NODE_STATUS_NEVER_CONNECTED
 	}
 
-	/** @return True if the node has just connected and given us a noderef, and we did not know 
+	private static MessageQueue makeMessageQueue(Node source, 
+	        NodeCrypto sourceCrypto, byte[] pubKeyHash) {
+	    if(source.isTestingVM && NodeStarter.isMessageQueueBypassEnabled()) {
+	        Node target = NodeStarter.maybeGetNode(pubKeyHash);
+	        if(target != null) {
+	            NodeCrypto targetCrypto =
+	                    sourceCrypto.isOpennet ? target.getOpennet().crypto : target.darknetCrypto;
+	            if(NodeStarter.isCBRMessageQueueBypass()) {
+	                TestNodeParameters params = NodeStarter.maybeGetNodeParameters(pubKeyHash);
+	                return new SlowBypassMessageQueue(target, source, targetCrypto, sourceCrypto, params.bypassCBRBandwidthLimit, params.bypassCBRDelay);
+	            } else {
+	                return new BypassMessageQueue(target, source, targetCrypto, sourceCrypto);
+	            }
+            }
+	    }
+	    return new PeerMessageQueue();
+    }
+	
+	private static PacketFormat makePacketFormat(PeerNode sourcePeerNode, MessageQueue queue, 
+	        int ourInitialMsgID, int theirInitialMsgID, Node sourceNode, NodeCrypto sourceCrypto, 
+	        byte[] sourcePubKeyHash, byte[] targetPubKeyHash) {
+	    if(queue.neverHandshake()) {
+	        return new DummyPacketFormat();
+	    }
+	    if(sourceNode.isTestingVM && NodeStarter.isPacketBypassEnabled()) {
+	        Node targetNode = NodeStarter.maybeGetNode(targetPubKeyHash);
+            NodeCrypto targetCrypto =
+                sourceCrypto.isOpennet ? targetNode.getOpennet().crypto : targetNode.darknetCrypto;
+	        if(targetNode != null) {
+	           return new BypassPacketFormat(queue, sourceNode, targetNode, sourceCrypto, 
+	                   targetCrypto);
+	        }
+	    }
+	    return new NewPacketFormat(sourcePeerNode, ourInitialMsgID, theirInitialMsgID);
+	}
+
+    /** @return True if the node has just connected and given us a noderef, and we did not know 
 	 * it beforehand. This makes it a temporary connection. At the moment this only happens on 
 	 * seednodes. */
 	protected boolean fromAnonymousInitiator() {
@@ -1076,6 +1122,7 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 		if(logMINOR)
 			Logger.minor(this, "Sending async: " + msg + " : " + cb + " on " + this+" for "+node.getDarknetPortNumber()+" priority "+msg.getPriority());
 		if(!isConnected()) {
+		    if(logMINOR) Logger.minor(this, "Not connected on "+this+" for "+msg);
 			if(cb != null)
 				cb.disconnected();
 			throw new NotConnectedException();
@@ -1882,21 +1929,21 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 	*/
 	@Override
 	public void receivedPacket(boolean dontLog, boolean dataPacket) {
-		synchronized(this) {
-			if((!isConnected()) && (!dontLog)) {
-				// Don't log if we are disconnecting, because receiving packets during disconnecting is normal.
-				// That includes receiving packets after we have technically disconnected already.
-				// A race condition involving forceCancelDisconnecting causing a mistaken log message anyway
-				// is conceivable, but unlikely...
-				if((unverifiedTracker == null) && (currentTracker == null) && !disconnecting)
-					Logger.error(this, "Received packet while disconnected!: " + this, new Exception("error"));
-				else
-					if(logMINOR)
-						Logger.minor(this, "Received packet while disconnected on " + this + " - recently disconnected() ?");
-			} else {
-				if(logMINOR) Logger.minor(this, "Received packet on "+this);
-			}
-		}
+	    if((!isConnected()) && (!dontLog)) {
+	        synchronized(this) {
+	            // Don't log if we are disconnecting, because receiving packets during disconnecting is normal.
+	            // That includes receiving packets after we have technically disconnected already.
+	            // A race condition involving forceCancelDisconnecting causing a mistaken log message anyway
+	            // is conceivable, but unlikely...
+	            if((unverifiedTracker == null) && (currentTracker == null) && !disconnecting)
+	                Logger.error(this, "Received packet while disconnected!: " + this, new Exception("error"));
+	            else
+	                if(logMINOR)
+	                    Logger.minor(this, "Received packet while disconnected on " + this + " - recently disconnected() ?");
+	        }
+	    } else {
+	        if(logMINOR) Logger.minor(this, "Received packet on "+this);
+	    }
 		long now = System.currentTimeMillis();
 		synchronized(this) {
 			timeLastReceivedPacket = now;
@@ -2127,7 +2174,8 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 				Logger.error(this, "previousTracker key equals unverifiedTracker key: prev "+previousTracker+" unv "+unverifiedTracker);
 			timeLastSentPacket = now;
 			if(packetFormat == null) {
-				packetFormat = new NewPacketFormat(this, ourInitialMsgID, theirInitialMsgID);
+			    packetFormat = makePacketFormat(this, messageQueue, ourInitialMsgID, 
+			            theirInitialMsgID, node, crypto, crypto.ecdsaPubKeyHash, peerECDSAPubKeyHash);
 			}
 			// Completed setup counts as received data packet, for purposes of avoiding spurious disconnections.
 			timeLastReceivedPacket = now;
@@ -2176,7 +2224,7 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 		return trackerID;
 	}
 
-	protected abstract void maybeClearPeerAddedTimeOnConnect();
+    protected abstract void maybeClearPeerAddedTimeOnConnect();
 
 	@Override
 	public long getBootID() {
@@ -5287,10 +5335,6 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 		outputLoadTracker(tag.realTimeFlag).maybeNotifySlotWaiter();
 	}
 	
-	public void postUnlock(UIDTag tag) {
-		outputLoadTracker(tag.realTimeFlag).maybeNotifySlotWaiter();
-	}
-	
 	static SlotWaiter createSlotWaiter(UIDTag tag, RequestType type, boolean offeredKey, boolean realTime, PeerNode source) {
 		return new SlotWaiter(tag, type, offeredKey, realTime, source);
 	}
@@ -5343,7 +5387,7 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 	public abstract boolean shallWeRouteAccordingToOurPeersLocation(int htl);
 	
 	@Override
-	public PeerMessageQueue getMessageQueue() {
+	public MessageQueue getMessageQueue() {
 		return messageQueue;
 	}
 
@@ -5832,4 +5876,52 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 	protected final byte[] getPubKeyHash() {
 	    return peerECDSAPubKeyHash;
 	}
+
+	/** Check for timeouts causing disconnection. Run on the PacketSender thread before checking 
+	 * for packets to send.
+	 */
+    public boolean checkForDisconnectionTimeout(long now) {
+        if(neverHandshake()) {
+            // Transport layer completely bypassed. Do not handshake or send keepalives.
+            // Hence no timeouts.
+            return false;
+        }
+        // Is the node dead?
+        // It might be disconnected in terms of FNP but trying to reconnect via JFK's, so we need to use the time when we last got a *data* packet.
+        if(now - lastReceivedDataPacketTime() > maxTimeBetweenReceivedPackets()) {
+            Logger.normal(this, "Disconnecting from " + this + " - haven't received packets recently");
+            // Hopefully this is a transient network glitch, but stuff will have already started to timeout, so lets dump the pending messages.
+            disconnected(true, false);
+            return true;
+        } else if(now - lastReceivedAckTime() > maxTimeBetweenReceivedAcks() && !isDisconnecting()) {
+            // FIXME better to disconnect immediately??? Or check canSend()???
+            Logger.normal(this, "Disconnecting from " + this + " - haven't received acks recently");
+            // Do it properly.
+            // There appears to be connectivity from them to us but not from us to them.
+            // So it is helpful for them to know that we are disconnecting.
+            node.peers.disconnect(this, true, true, false, true, false, SECONDS.toMillis(5));
+            return true;
+        } else if(isRoutable() && noLongerRoutable()) {
+            /*
+             NOTE: Whereas isRoutable() && noLongerRoutable() are generally mutually exclusive, this
+             code will only execute because of the scheduled-runnable in start() which executes
+             updateVersionRoutablity() on all our peers. We don't disconnect the peer, but mark it
+             as being incompatible.
+             */
+            invalidate(now);
+            Logger.normal(this, "shouldDisconnectNow has returned true : marking the peer as incompatible: "+this);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean neverHandshake() {
+        if(messageQueue.neverHandshake()) return true;
+        if(packetFormat instanceof BypassPacketFormat) return true;
+        return false;
+    }
+
+    public PacketFormat getPacketFormat() {
+        return packetFormat;
+    }
 }

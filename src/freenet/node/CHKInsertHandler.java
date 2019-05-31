@@ -85,7 +85,7 @@ public class CHKInsertHandler implements PrioRunnable, ByteCounter {
     
     @Override
 	public String toString() {
-        return super.toString()+" for "+uid;
+        return super.toString()+" for "+uid+" on "+node.getDarknetPortNumber();
     }
     
     @Override
@@ -173,7 +173,7 @@ public class CHKInsertHandler implements PrioRunnable, ByteCounter {
         // Receive the data, off thread
         Runnable dataReceiver = new DataReceiver();
 		receiveStarted = true;
-        node.executor.execute(dataReceiver, "CHKInsertHandler$DataReceiver for UID "+uid);
+        node.executor.execute(dataReceiver, "CHKInsertHandler$DataReceiver for UID "+uid+" on "+node.getDarknetPortNumber());
 
         // Wait...
         // What do we want to wait for?
@@ -560,7 +560,7 @@ public class CHKInsertHandler implements PrioRunnable, ByteCounter {
 		} catch (KeyCollisionException e) {
 			// Impossible with CHKs.
 		}
-        if(logMINOR) Logger.minor(this, "Committed");
+        if(logMINOR) Logger.minor(this, "Committed "+this);
     }
 
 	/** Has the receive failed? If so, there's not much more that can be done... */

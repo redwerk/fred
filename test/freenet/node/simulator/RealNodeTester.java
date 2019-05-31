@@ -24,14 +24,24 @@ import freenet.support.Logger.LogLevel;
  * @author toad
  * @author robert
  */
-public class RealNodeTest {
+public class RealNodeTester {
 
-	static final int EXIT_BASE = NodeInitException.EXIT_NODE_UPPER_LIMIT;
+	@SuppressWarnings("serial")
+    public static class SimulatorOverloadedException extends Exception {
+
+        public SimulatorOverloadedException(String msg) {
+            super(msg);
+        }
+
+    }
+
+    static final int EXIT_BASE = NodeInitException.EXIT_NODE_UPPER_LIMIT;
 	static final int EXIT_CANNOT_DELETE_OLD_DATA = EXIT_BASE + 3;
 	static final int EXIT_PING_TARGET_NOT_REACHED = EXIT_BASE + 4;
 	static final int EXIT_INSERT_FAILED = EXIT_BASE + 5;
 	static final int EXIT_REQUEST_FAILED = EXIT_BASE + 6;
 	static final int EXIT_BAD_DATA = EXIT_BASE + 7;
+	static final int EXIT_RESULTS_NOT_AS_EXPECTED = EXIT_BASE + 8;
 	
 	static final FRIEND_TRUST trust = FRIEND_TRUST.LOW;
 	static final FRIEND_VISIBILITY visibility = FRIEND_VISIBILITY.NO;
@@ -72,9 +82,11 @@ public class RealNodeTest {
 			for(int i=0;i<nodes.length;i++) {
 				int next = (i+1) % nodes.length;
 				connect(nodes[i], nodes[next]);
+                Logger.normal(RealNodeTester.class, "Connecting node "+i+" to node "+next);
 			}
 		}
 		for (int i=0; i<nodes.length; i++) {
+		    System.err.println("Connecting node "+i+" of "+nodes.length);
 			Node a = nodes[i];
 			// Normalise the probabilities
 			double norm = 0.0;
@@ -91,6 +103,7 @@ public class RealNodeTest {
 				for (int n = 0; n < degree / 2; n++) {
 					if (random.nextFloat() < p) {
 						connect(a, b);
+						Logger.normal(RealNodeTester.class, "Connecting node "+i+" to node "+k);
 						break;
 					}
 				}
@@ -103,13 +116,13 @@ public class RealNodeTest {
 			a.connect (b, trust, visibility);
 			b.connect (a, trust, visibility);
 		} catch (FSParseException e) {
-			Logger.error(RealNodeTest.class, "cannot connect!!!!", e);
+			Logger.error(RealNodeTester.class, "cannot connect!!!!", e);
 		} catch (PeerParseException e) {
-			Logger.error(RealNodeTest.class, "cannot connect #2!!!!", e);
+			Logger.error(RealNodeTester.class, "cannot connect #2!!!!", e);
 		} catch (freenet.io.comm.ReferenceSignatureVerificationException e) {
-			Logger.error(RealNodeTest.class, "cannot connect #3!!!!", e);
+			Logger.error(RealNodeTester.class, "cannot connect #3!!!!", e);
 		} catch (PeerTooOldException e) {
-            Logger.error(RealNodeTest.class, "cannot connect #4!!!!", e);
+            Logger.error(RealNodeTester.class, "cannot connect #4!!!!", e);
         }
 	}
 	
@@ -132,10 +145,30 @@ public class RealNodeTest {
 	}
 	
 	static void waitForAllConnected(Node[] nodes) throws InterruptedException {
+	    try {
+            waitForAllConnected(nodes, false, false, false);
+        } catch (SimulatorOverloadedException e) {
+            // Impossible unless the booleans are true.
+            throw new Error(e);
+        }
+	}
+	
+	/** Wait until all the nodes are connected.
+	 * @param nodes List of nodes to wait for.
+	 * @param disconnectFatal If true, all the nodes should be connected already, we are
+	 * just checking for CPU overload in a simulation. Throw if any nodes are not connected 
+	 * or have high ping times, which should only happen if there is severe CPU overload. 
+	 * Note that ping times are generally a good proxy for CPU load.
+	 * @param backoffFatal If true, we are doing a sequential simulation, i.e. one request
+	 * at a time, so no requests should be rejected. So throw if any nodes are backed off.
+	 * @param checkOnly If true, don't wait.
+	 * @throws InterruptedException
+	 */
+	static void waitForAllConnected(Node[] nodes, boolean disconnectFatal, boolean backoffFatal, 
+	        boolean checkOnly) throws InterruptedException, SimulatorOverloadedException {
 		long tStart = System.currentTimeMillis();
 		while(true) {
 			int countFullyConnected = 0;
-			int countReallyConnected = 0;
 			int totalPeers = 0;
 			int totalConnections = 0;
 			int totalPartialConnections = 0;
@@ -161,27 +194,37 @@ public class RealNodeTest {
 				if(pingTime < minPingTime) minPingTime = pingTime;
 				if(countConnected == countTotal) {
 					countFullyConnected++;
-					if(countBackedOff == 0) countReallyConnected++;
 				} else {
 					if(logMINOR)
-						Logger.minor(RealNodeTest.class, "Connection count for "+nodes[i]+" : "+countConnected+" partial "+countAlmostConnected);
+						Logger.minor(RealNodeTester.class, "Connection count for "+nodes[i]+" : "+countConnected+" partial "+countAlmostConnected);
 				}
 				if(countBackedOff > 0) {
 					if(logMINOR)
-						Logger.minor(RealNodeTest.class, "Backed off: "+nodes[i]+" : "+countBackedOff);
+						Logger.minor(RealNodeTester.class, "Backed off: "+nodes[i]+" : "+countBackedOff);
 				}
 			}
 			double avgPingTime = totalPingTime / nodes.length;
-			if(countFullyConnected == nodes.length && countReallyConnected == nodes.length && totalBackedOff == 0 &&
+			if(countFullyConnected == nodes.length && totalBackedOff == 0 &&
 					minPingTime < NodeStats.DEFAULT_SUB_MAX_PING_TIME && maxPingTime < NodeStats.DEFAULT_SUB_MAX_PING_TIME && avgPingTime < NodeStats.DEFAULT_SUB_MAX_PING_TIME) {
-				System.err.println("All nodes fully connected");
-				Logger.normal(RealNodeTest.class, "All nodes fully connected");
-				System.err.println();
+				System.out.println("All nodes fully connected");
+				Logger.normal(RealNodeTester.class, "All nodes fully connected");
+				//System.err.println();
 				return;
 			} else {
+			    if(disconnectFatal) {
+			        if(countFullyConnected != nodes.length) {
+			            throw new SimulatorOverloadedException("Disconnected nodes - possible CPU overload???");
+			        } else if(maxPingTime >= NodeStats.DEFAULT_SUB_MAX_PING_TIME) {
+			            throw new SimulatorOverloadedException("Nodes have high ping time, possible CPU overload?");
+			        }
+			    }
+			    if(backoffFatal && totalBackedOff > 0) {
+			        throw new SimulatorOverloadedException("Backed off nodes not expected in sequential simulation - CPU overload??");
+			    }
+			    if(checkOnly) return;
 				long tDelta = (System.currentTimeMillis() - tStart)/1000;
 				System.err.println("Waiting for nodes to be fully connected: "+countFullyConnected+" / "+nodes.length+" ("+totalConnections+" / "+totalPeers+" connections total partial "+totalPartialConnections+" compatible "+totalCompatibleConnections+") - backed off "+totalBackedOff+" ping min/avg/max "+(int)minPingTime+"/"+(int)avgPingTime+"/"+(int)maxPingTime+" at "+tDelta+'s');
-				Logger.normal(RealNodeTest.class, "Waiting for nodes to be fully connected: "+countFullyConnected+" / "+nodes.length+" ("+totalConnections+" / "+totalPeers+" connections total partial "+totalPartialConnections+" compatible "+totalCompatibleConnections+") - backed off "+totalBackedOff+" ping min/avg/max "+(int)minPingTime+"/"+(int)avgPingTime+"/"+(int)maxPingTime+" at "+tDelta+'s');
+				Logger.normal(RealNodeTester.class, "Waiting for nodes to be fully connected: "+countFullyConnected+" / "+nodes.length+" ("+totalConnections+" / "+totalPeers+" connections total partial "+totalPartialConnections+" compatible "+totalCompatibleConnections+") - backed off "+totalBackedOff+" ping min/avg/max "+(int)minPingTime+"/"+(int)avgPingTime+"/"+(int)maxPingTime+" at "+tDelta+'s');
 				Thread.sleep(1000);
 			}
 		}

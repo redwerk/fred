@@ -54,6 +54,7 @@ import freenet.keys.NodeSSK;
 import freenet.keys.SSKBlock;
 import freenet.keys.SSKVerifyException;
 import freenet.l10n.NodeL10n;
+import freenet.node.OpennetManager.WaitedTooLongForOpennetNoderefException;
 import freenet.node.SecurityLevels.PHYSICAL_THREAT_LEVEL;
 import freenet.node.useralerts.DiskSpaceUserAlert;
 import freenet.node.useralerts.SimpleUserAlert;
@@ -1327,6 +1328,21 @@ public class NodeClientCore implements Persistable {
 		}
 	}
 
+	/** Simple testing API to do a request for a single block. Bypasses load limiting.
+	 * Mainly for simulations. Plugins and higher level code should generally use the 
+	 * client layer (freenet.client), which provides higher level functionality, e.g.
+	 * redirects, splitfiles. The client layer itself uses asyncGet(). Returns only
+	 * after the request has completed (to keep things consistent).
+	 * @param key The client-level key to fetch.
+	 * @param localOnly True to check the datastore only, and not go to the network.
+	 * @param ignoreStore True to ignore the datastore and go straight to the network.
+	 * @param canWriteClientCache True if we can write to the client cache.
+	 * @param realTimeFlag True for "real-time" traffic, false for bulk traffic. These
+	 * have different load management on other nodes.
+	 * @return The block fetched, decoded as a ClientKey. Note that this is still a very
+	 * low-level API, e.g. it may be a metadata block.
+	 * @throws LowLevelGetException If the request fails for some reason.
+	 */
 	public ClientKeyBlock realGetKey(ClientKey key, boolean localOnly, boolean ignoreStore, boolean canWriteClientCache, boolean realTimeFlag) throws LowLevelGetException {
 		if(key instanceof ClientCHK)
 			return realGetCHK((ClientCHK) key, localOnly, ignoreStore, canWriteClientCache, realTimeFlag);
@@ -1428,7 +1444,18 @@ public class NodeClientCore implements Persistable {
 						}
 					}
 
-				if(status == RequestSender.SUCCESS)
+				if(status == RequestSender.SUCCESS) {
+				    /* Wait for the request to finish, for consistency.
+				     * The data will have already been returned via client-layer 
+				     * callbacks, and this method is only used by simulations anyway.
+				     * The client layer uses asyncGet(). */
+				    try {
+                        rs.waitForOpennetNoderef();
+                        // We can safely ignore the returned noderef if any.
+                        // It has already been rejected by RequestSender.
+                    } catch (WaitedTooLongForOpennetNoderefException e1) {
+                        // Ignore.
+                    }
 					try {
 						return new ClientCHKBlock(rs.getPRB().getBlock(), rs.getHeaders(), key, true);
 					} catch(CHKVerifyException e) {
@@ -1438,7 +1465,7 @@ public class NodeClientCore implements Persistable {
 						Logger.error(this, "Impossible: " + e, e);
 						throw new LowLevelGetException(LowLevelGetException.INTERNAL_ERROR);
 					}
-				else {
+				} else {
 					switch(status) {
 						case RequestSender.NOT_FINISHED:
 							Logger.error(this, "RS still running in getCHK!: " + rs);
