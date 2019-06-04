@@ -1,0 +1,164 @@
+commit 7a297f62a547879a9970e7434879624cab4604e6
+Merge: 9538e6d14 6bcc413f7
+Author: Oleh Shklyar <o1ezha@ukr.net>
+Date:   Fri May 31 20:18:45 2019 +0300
+
+    merge Toad's fast-simulator-insert-on-multiple-nodes
+
+diff --cc src/freenet/node/MultiMessageCallback.java
+index 9d42ef155,6e6ddf256..3bedbb4b1
+--- a/src/freenet/node/MultiMessageCallback.java
++++ b/src/freenet/node/MultiMessageCallback.java
+@@@ -1,36 -1,21 +1,42 @@@
+  package freenet.node;
+  
+  import freenet.io.comm.AsyncMessageCallback;
++ import freenet.support.Logger;
+  
+ -/** Waits for multiple asynchronous message sends, then calls finish(). */
+ +/** Groups a set of message sends together so that we get a single sent(boolean)
+ + * callback after all the messages have been sent, and then later a finished(boolean).
+ + * None of the callbacks will be called until after you call arm(). Typical usage:
+ + * <pre>Message m1 = ...;
+ + * Message m2 = ...;
+ + * PeerNode pn = ...;
+ + * MultiMessageCallback mcb = new MultiMessageCallback() {
+ + *   protected void finish(boolean success) {
+ + *     // Messages have finished.
+ + *   }
+ + *   protected void sent(boolean success) {
+ + *     // Messages have been sent.
+ + *   }
+ + * }
+ + * pn.sendAsync(m1, mcb.make(), ctr);
+ + * pn.sendAsync(m2, mcb.make(), ctr);
+ + * mcb.arm();</pre> */
+  public abstract class MultiMessageCallback {
++     
++     private static volatile boolean logMINOR;
++     static {
++         Logger.registerClass(MultiMessageCallback.class);
++     }
+  	
+ +    /** Number of messages that have not yet completed */
+  	private int waiting;
+ +	/** Number of messages that have not yet been sent */
+  	private int waitingForSend;
+  	
+ +	/** True if arm() has been called. finish(boolean) and sent(boolean) will 
+ +	 * only be called after arming the callback. */
+  	private boolean armed;
+  	
+ +	/** True if some messages have failed to send (e.g. disconnected). */
+  	private boolean someFailed;
+  	
+  	/** This is called when all messages have been acked, or failed */
+diff --cc src/freenet/node/NewPacketFormat.java
+index 5c15940c1,1c44d8a93..1fbf0e31e
+--- a/src/freenet/node/NewPacketFormat.java
++++ b/src/freenet/node/NewPacketFormat.java
+@@@ -562,8 -561,8 +562,8 @@@ public class NewPacketFormat implement
+  		return true;
+  	}
+  
+- 	NPFPacket createPacket(int maxPacketSize, PeerMessageQueue messageQueue, SessionKey sessionKey, boolean ackOnly) throws BlockedTooLongException {
+ -	NPFPacket createPacket(int maxPacketSize, MessageQueue messageQueue, SessionKey sessionKey, boolean ackOnly, boolean useCumulativeAcks) throws BlockedTooLongException {
+--		
+++	NPFPacket createPacket(int maxPacketSize, MessageQueue messageQueue, SessionKey sessionKey, boolean ackOnly)
+++			throws BlockedTooLongException {
+  		checkForLostPackets();
+  		
+  		NPFPacket packet = new NPFPacket();
+diff --cc src/freenet/node/NodeClientCore.java
+index 8e86ccf0e,c337ccb7c..637f72f4b
+--- a/src/freenet/node/NodeClientCore.java
++++ b/src/freenet/node/NodeClientCore.java
+@@@ -54,7 -60,10 +54,8 @@@ import freenet.keys.NodeSSK
+  import freenet.keys.SSKBlock;
+  import freenet.keys.SSKVerifyException;
+  import freenet.l10n.NodeL10n;
++ import freenet.node.OpennetManager.WaitedTooLongForOpennetNoderefException;
+  import freenet.node.SecurityLevels.PHYSICAL_THREAT_LEVEL;
+ -import freenet.node.fcp.FCPClient;
+ -import freenet.node.fcp.FCPPersistentRoot;
+  import freenet.node.useralerts.DiskSpaceUserAlert;
+  import freenet.node.useralerts.SimpleUserAlert;
+  import freenet.node.useralerts.UserAlert;
+diff --cc src/freenet/node/NodeStarter.java
+index 0ce1436d6,f40889f59..a954f584b
+--- a/src/freenet/node/NodeStarter.java
++++ b/src/freenet/node/NodeStarter.java
+@@@ -26,12 -32,11 +30,14 @@@ import freenet.support.Logger
+  import freenet.support.Logger.LogLevel;
+  import freenet.support.LoggerHook.InvalidThresholdException;
+  import freenet.support.PooledExecutor;
+ +import freenet.support.ProcessPriority;
++ import freenet.support.PrioritizedTicker;
+  import freenet.support.SimpleFieldSet;
++ import freenet.support.Ticker;
+  import freenet.support.io.NativeThread;
+  
+ +import static java.util.concurrent.TimeUnit.MINUTES;
+ +
+  /**
+   *  @author nextgens
+   *
+@@@ -416,7 -437,8 +442,8 @@@ public class NodeStarter implements Wra
+          public int dropProb;
+          public RandomSource random;
+          public Executor executor;
++         public PrioritizedTicker ticker;
+ -        public int threadLimit;
+ +        public int threadLimit = 500;
+          public long storeSize;
+          public boolean ramStore;
+          public boolean enableSwapping;
+diff --cc src/freenet/node/PeerNode.java
+index fcd1d7af2,bb0507d97..ca052f1f4
+--- a/src/freenet/node/PeerNode.java
++++ b/src/freenet/node/PeerNode.java
+@@@ -5340,10 -5371,10 +5384,10 @@@ public abstract class PeerNode implemen
+  	 * allow them to reconnect. */
+  	public abstract void fatalTimeout();
+  	
+ -	public abstract boolean shallWeRouteAccordingToOurPeersLocation();
+ +	public abstract boolean shallWeRouteAccordingToOurPeersLocation(int htl);
+  	
+  	@Override
+- 	public PeerMessageQueue getMessageQueue() {
++ 	public MessageQueue getMessageQueue() {
+  		return messageQueue;
+  	}
+  
+diff --cc src/freenet/node/RequestStarterGroup.java
+index eda7ab9be,eb4e02f2e..b9ec23ebd
+--- a/src/freenet/node/RequestStarterGroup.java
++++ b/src/freenet/node/RequestStarterGroup.java
+@@@ -11,11 -14,13 +12,14 @@@ import freenet.config.NodeNeedRestartEx
+  import freenet.config.SubConfig;
+  import freenet.crypt.RandomSource;
+  import freenet.keys.Key;
++ import freenet.l10n.NodeL10n;
+  import freenet.support.LogThresholdCallback;
+  import freenet.support.Logger;
+ +import freenet.support.Logger.LogLevel;
+  import freenet.support.SimpleFieldSet;
+  import freenet.support.TimeUtil;
++ import freenet.support.Logger.LogLevel;
++ import freenet.support.api.BooleanCallback;
+  import freenet.support.api.StringCallback;
+  import freenet.support.math.BootstrappingDecayingRunningAverage;
+  
+@@@ -66,9 -69,11 +70,11 @@@ public class RequestStarterGroup 
+  	public final ClientRequestScheduler chkPutSchedulerRT;
+  	public final ClientRequestScheduler sskFetchSchedulerRT;
+  	public final ClientRequestScheduler sskPutSchedulerRT;
++ 	
++ 	private boolean lazyStart;
+  
+  	private final NodeStats stats;
+ -	RequestStarterGroup(Node node, NodeClientCore core, int portNumber, RandomSource random, Config config, SimpleFieldSet fs, ClientContext ctx, long dbHandle) throws InvalidConfigValueException {
+ +	RequestStarterGroup(Node node, NodeClientCore core, int portNumber, RandomSource random, Config config, SimpleFieldSet fs, ClientContext ctx) throws InvalidConfigValueException {
+  		SubConfig schedulerConfig = config.createSubConfig("node.scheduler");
+  		this.stats = core.nodeStats;
+  		
