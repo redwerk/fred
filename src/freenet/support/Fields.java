@@ -721,6 +721,9 @@ public abstract class Fields {
 			case SIZE:
 				return parseInt(s);
 			case DURATION:
+				if (!s.matches(".*[wdhms].*"))
+					return parseInt(s);
+
 				long durationInMillis = TimeUtil.toMillis(s);
 				if ((int) durationInMillis == durationInMillis)
 					return (int) durationInMillis;

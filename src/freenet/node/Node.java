@@ -1646,9 +1646,7 @@ public class Node implements TimeSkewDetectorCallback {
 					 }
 			@Override
 			public void set(Integer maxTimeForSingleCompressor) {
-				synchronized(Node.this) {
-					Node.this.maxTimeForSingleCompressor = maxTimeForSingleCompressor;
-				}
+				Node.this.maxTimeForSingleCompressor = maxTimeForSingleCompressor;
 			}
 		}, Dimension.DURATION);
 
