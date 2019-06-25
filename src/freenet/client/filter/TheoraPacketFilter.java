@@ -2,6 +2,7 @@ package freenet.client.filter;
 
 import java.io.*;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
@@ -18,6 +19,7 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 
 	public CodecPacket parse(CodecPacket packet) throws IOException {
 		// Assemble the Theora packets https://www.theora.org/doc/Theora.pdf
+		// https://github.com/xiph/theora/blob/master/doc/spec/spec.tex
 		BitInputStream input = new BitInputStream(new ByteArrayInputStream(packet.payload));
 		byte[] magicHeader = new byte[1 + magicNumber.length];
 		try {
@@ -123,80 +125,108 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 					input.readFully(magicHeader);
 					checkMagicHeader(magicHeader, (byte) 0x82); // -126
 
-					// TODO: end of page 50 - missing algorithm
 					if (logMINOR)
 						Logger.minor(this, "SETUP_HEADER: available " + input.available() + " bytes");
 
-					int NBITS = input.readInt(4) + 1;
-					if (logMINOR)
-						Logger.minor(this, "    NBITS: " + NBITS);
+					int NBITS = input.readInt(3);
+					int[] LFLIMS = new int[64];
+					for (int i = 0; i < LFLIMS.length; i++)
+						LFLIMS[i] = input.readInt(NBITS);
+
+					NBITS = input.readInt(4) + 1;
 					int[] ACSCALE = new int[64];
 					for (int i = 0; i < ACSCALE.length; i++)
 						ACSCALE[i] = input.readInt(NBITS);
 
 					NBITS = input.readInt(4) + 1;
-					if (logMINOR)
-						Logger.minor(this, "    NBITS: " + NBITS);
 					int[] DCSCALE = new int[64];
 					for (int i = 0; i < DCSCALE.length; i++)
 						DCSCALE[i] = input.readInt(NBITS);
 
 					int NBMS = input.readInt(9) + 1;
-					if (logMINOR)
-						Logger.minor(this, "    NBITS: " + NBMS);
 					if (NBMS > 384)
 						throw new UnknownContentTypeException("SETUP HEADER - NBMS: " + NBMS + "(MUST be no greater than 384)");
 
-					// TODO: page 53 point 6 - eof exception happens, probably too high NBMS
-//					int[][] BMS = new int[NBMS][64];
-//					for (int i = 0; i < BMS.length; i++)
-//						for (int j = 0; j < BMS[i].length; j++)
-//							BMS[i][j] = input.readInt(8);
-//
-//					for (int qti = 0; qti <= 1; qti++) {
-//						for (int pli = 0; pli <= 2; pli++) {
-//							int NEWQR = 1;
-//							if (qti > 0 || pli > 0)
-//								NEWQR = input.readBit();
-//
-//							int[][] NQRS = new int[2][3];
-//							int[][][] QRSIZES = new int[2][3][63];
-//							int[][][] QRBMIS = new int[2][3][64];
-//							if (NEWQR == 0) {
-//								int qtj, plj;
-//								int RPQR = 0;
-//								if (qti > 0)
-//									RPQR = input.readBit();
-//
-//								if (RPQR == 1) {
-//									qtj = qti - 1;
-//									plj = pli;
-//								}
-//								else {
-////									qtj = (3 * qti + pli - 1) // 3; // TODO: See conventions - Integer division
-//									plj = (pli + 2) % 3;
-//								}
-//
-//								NQRS[qti][pli] = NQRS[qtj][plj];
-//								QRSIZES[qti ][pli ] = QRSIZES[qtj][plj];
-//								QRBMIS[qti ][pli ] = QRBMIS[qtj][plj];
-//							}
-//							else {
-//								int qri = 0;
-//								int qi = 0;
-//
-//								// TODO: page 54 point C - ilog(NBMS − 1) See conventions
-////								QRBMIS[qti][pli][qri] =
-//							}
-//						}
-//					}
+					int[][] BMS = new int[NBMS][64];
+					for (int i = 0; i < BMS.length; i++)
+						for (int j = 0; j < BMS[i].length; j++)
+							BMS[i][j] = input.readInt(8);
+
+					for (int qti = 0; qti <= 1; qti++) {
+						for (int pli = 0; pli <= 2; pli++) {
+							int NEWQR = 1;
+							if (qti > 0 || pli > 0)
+								NEWQR = input.readBit();
+
+							int[][] NQRS = new int[2][3];
+							int[][][] QRSIZES = new int[2][3][63];
+							int[][][] QRBMIS = new int[2][3][64];
+							if (NEWQR == 0) {
+								int qtj, plj;
+								int RPQR = 0;
+								if (qti > 0)
+									RPQR = input.readBit();
+
+								if (RPQR == 1) {
+									qtj = qti - 1;
+									plj = pli;
+								}
+								else {
+									qtj = (3 * qti + pli - 1) / 3;
+									plj = (pli + 2) % 3;
+								}
+
+								NQRS[qti][pli] = NQRS[qtj][plj];
+								QRSIZES[qti ][pli ] = QRSIZES[qtj][plj];
+								QRBMIS[qti ][pli ] = QRBMIS[qtj][plj];
+							}
+							else {
+								if (NEWQR != 1)
+									throw new UnknownContentTypeException("SETUP HEADER - NEWQR: " + NBMS + "(MUST be 0|1)");
+
+								int qri = 0;
+								int qi = 0;
+
+								QRBMIS[qti][pli][qri] = input.readInt(ilog(NBMS - 1));
+
+								if (QRBMIS[qti][pli][qri] >= NBMS)
+									throw new UnknownContentTypeException("(QRBMIS[qti][pli][qri] = " + QRBMIS[qti][pli][qri] +
+											") >= (NBMS = " + NBMS + ") The stream is undecodable.");
+
+								while (true) {
+									QRSIZES[qti][pli][qri] = input.readInt(ilog(62 - qi)) + 1;
+
+									qi = qi + QRSIZES[qti][pli][qri];
+									qri++;
+
+									QRBMIS[qti][pli][qri] = input.readInt(ilog(NBMS - 1));
+
+									if (qi < 63)
+										continue;
+									else if (qi > 63)
+										throw new UnknownContentTypeException("qi = " + qi + "; qi > 63 - The stream is undecodable.");
+
+									break;
+								}
+
+								NQRS[qti][pli] = qri;
+							}
+						}
+					}
+
+					int[][] HTS = new int[80][0];
+					for (int hti = 0; hti < 80; hti++)
+						readHuffmanTable("", HTS, hti, input);
+
+					if (logMINOR)
+						Logger.minor(this, "SETUP_HEADER: left " + input.available() + " bytes");
 
 					expectedPacket = Packet.INTRA_FRAME;
 					break;
 
 				case INTRA_FRAME: // first in Frame
-					if (logMINOR)
-						Logger.minor(this, "INTRA_FRAME");
+//					if (logMINOR)
+//						Logger.minor(this, "INTRA_FRAME");
 
 					try {
 						int firstBit = input.readBit();
@@ -228,8 +258,8 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 					break;
 
 				case INTER_FRAME:
-					if (logMINOR)
-						Logger.minor(this, "INTER_FRAME");
+//					if (logMINOR)
+//						Logger.minor(this, "INTER_FRAME");
 
 					try {
 						int firstBit = input.readBit();
@@ -261,6 +291,43 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 		for (int i=0; i < magicNumber.length; i++) {
 			if (typeAndMagicHeader[i+1] != magicNumber[i])
 				throw new UnknownContentTypeException("Packet header magicNumber[" + i + "]: " + typeAndMagicHeader[i+1]);
+		}
+	}
+
+	// The minimum number of bits required to store a positive integer `a` in
+	// two’s complement notation, or 0 for a non-positive integer a.
+	private int ilog(int a) {
+		if (a <= 0)
+			return 0;
+
+		int n = 0;
+		while (a > 0) {
+			a = a >> 1;
+			n++;
+		}
+		return n;
+	}
+
+	private void readHuffmanTable(String HBITS, int[][] HTS, int hti, BitInputStream input) throws IOException {
+		if (HBITS.length() > 32)
+			throw new UnknownContentTypeException("HBITS = " + HBITS +
+					"; HBITS is longer than 32 bits in length - The stream is undecodable.");
+
+		int ISLEAF = input.readBit();
+		if (ISLEAF == 1) {
+			if (HTS[hti].length == 32)
+				throw new UnknownContentTypeException("HTS[hti] = " + Arrays.toString(HTS[hti]) +
+						"; HTS[hti] is already 32 - The stream is undecodable.");
+			int TOKEN = input.readInt(5);
+
+			HTS[hti] = Arrays.copyOf(HTS[hti], HTS[hti].length + 1);
+			HTS[hti][HTS[hti].length - 1] = TOKEN;
+		} else {
+			HBITS += 0;
+			readHuffmanTable(HBITS, HTS, hti, input);
+			HBITS = HBITS.substring(0, HBITS.length() - 1);
+			HBITS += 1;
+			readHuffmanTable(HBITS, HTS, hti, input);
 		}
 	}
 }
