@@ -2,7 +2,7 @@ package freenet.client.filter;
 
 import java.io.*;
 import java.nio.ByteOrder;
-import java.util.Arrays;
+import java.util.*;
 
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
@@ -216,18 +216,15 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 
 					int[][] HTS = new int[80][0];
 					for (int hti = 0; hti < 80; hti++)
-						readHuffmanTable("", HTS, hti, input);
+                        HTS[hti] = readHuffmanTable("", HTS[hti], input);
 
 					if (logMINOR)
-						Logger.minor(this, "SETUP_HEADER: left " + input.available() + " bytes");
+						Logger.minor(this, "SETUP_HEADER: left " + input.available() + " bytes (should be 0)");
 
 					expectedPacket = Packet.INTRA_FRAME;
 					break;
 
 				case INTRA_FRAME: // first in Frame
-//					if (logMINOR)
-//						Logger.minor(this, "INTRA_FRAME");
-
 					try {
 						int firstBit = input.readBit();
 
@@ -240,7 +237,8 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 
 					int FTYPE = input.readBit();
 					if (FTYPE != 0)
-						throw new DataFilterException("First frame type must be Intra frame");
+						throw new DataFilterException("First frame type must be Intra frame. FTYPE = " + FTYPE +
+								" (0 - Intra frame; 1 - Inter frame)");
 
 					int[] QIS = new int[3];
 					int NQIS = 0;
@@ -250,7 +248,8 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 
 					int reservedBits = input.readInt(3);
 					if (reservedBits != 0)
-						throw new DataFilterException("This frame is not decodable according to this specification");
+						throw new DataFilterException("Reserved bits = " + reservedBits +
+								" This frame is not decodable according to specification (Reserved bits should be 0)");
 
 					// TODO: page 64 required NBITS
 
@@ -258,21 +257,21 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 					break;
 
 				case INTER_FRAME:
-//					if (logMINOR)
-//						Logger.minor(this, "INTER_FRAME");
-
-					try {
-						int firstBit = input.readBit();
-
-						if (firstBit != 0) // TODO: some other but need it
-							break;
-					}
-					catch (EOFException e) {
-						throw new DataFilterException("Empty package");
-					}
-
-					FTYPE = input.readBit();
-//					if (FTYPE == 0) // TODO: Perhaps this may be INTRA_FRAME
+//					try {
+//						int firstBit = input.readBit();
+//
+//						if (firstBit != 0) // TODO: some other but need it
+//							break;
+//					}
+//					catch (EOFException e) {
+//						throw new DataFilterException("Empty package");
+//					}
+//
+//					FTYPE = input.readBit();
+//					if (FTYPE == 0) { // TODO: Perhaps this may be INTRA_FRAME
+//						expectedPacket = Packet.INTRA_FRAME;
+//						parse(packet);
+//					}
 			}
 		} catch(IOException e) {
 			if (logMINOR) Logger.minor(this, "In Theora parser caught " + e, e);
@@ -302,32 +301,34 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 
 		int n = 0;
 		while (a > 0) {
-			a = a >> 1;
+			a >>= 1;
 			n++;
 		}
 		return n;
 	}
 
-	private void readHuffmanTable(String HBITS, int[][] HTS, int hti, BitInputStream input) throws IOException {
+	private int[] readHuffmanTable(String HBITS, int[] HTS, BitInputStream input) throws IOException {
 		if (HBITS.length() > 32)
 			throw new UnknownContentTypeException("HBITS = " + HBITS +
 					"; HBITS is longer than 32 bits in length - The stream is undecodable.");
 
 		int ISLEAF = input.readBit();
 		if (ISLEAF == 1) {
-			if (HTS[hti].length == 32)
-				throw new UnknownContentTypeException("HTS[hti] = " + Arrays.toString(HTS[hti]) +
+			if (HTS.length == 32)
+				throw new UnknownContentTypeException("HTS[hti] = " + Arrays.toString(HTS) +
 						"; HTS[hti] is already 32 - The stream is undecodable.");
 			int TOKEN = input.readInt(5);
 
-			HTS[hti] = Arrays.copyOf(HTS[hti], HTS[hti].length + 1);
-			HTS[hti][HTS[hti].length - 1] = TOKEN;
+			HTS = Arrays.copyOf(HTS, HTS.length + 1);
+			HTS[HTS.length - 1] = TOKEN;
 		} else {
 			HBITS += 0;
-			readHuffmanTable(HBITS, HTS, hti, input);
+			readHuffmanTable(HBITS, HTS, input);
 			HBITS = HBITS.substring(0, HBITS.length() - 1);
 			HBITS += 1;
-			readHuffmanTable(HBITS, HTS, hti, input);
+			readHuffmanTable(HBITS, HTS, input);
 		}
+
+		return HTS;
 	}
 }
