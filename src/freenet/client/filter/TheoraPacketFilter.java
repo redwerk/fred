@@ -331,4 +331,163 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 
 		return HTS;
 	}
+
+	private String longRunBitStringDecode(int NBITS, BitInputStream input) throws IOException {
+		assert NBITS >= 0;
+
+		if (NBITS == 0)
+			return "";
+
+		int[][] huffmanCodesForLongRunLengths = {
+				{0, 1, 0}, // Huffman Code, RSTART, RBITS
+				{Integer.parseInt("10", 2), 2, 1},
+				{Integer.parseInt("110", 2), 4, 1},
+				{Integer.parseInt("1110", 2), 6, 2},
+				{Integer.parseInt("11110", 2), 10, 3},
+				{Integer.parseInt("111110", 2), 18, 4},
+				{Integer.parseInt("111111", 2), 34, 12}
+		};
+
+		int LEN = 0;
+		StringBuilder BITS = new StringBuilder();
+
+		int BIT = input.readBit();
+		int RSTART = 0;
+		int RBITS = 0;
+
+		while (true) {
+			int code = 0;
+			for (int i = 0; i < 7; i++) {
+				code = code << 1 | input.readBit();
+
+				if (code > 63)
+					throw new UnknownContentTypeException("Code: " + code +
+							"; Highest Huffman Code for Long Run Lengths is b111111");
+
+				for (int[] huffmanCode : huffmanCodesForLongRunLengths) {
+					if (code == huffmanCode[0]) {
+						RSTART = huffmanCode[1];
+						RBITS = huffmanCode[2];
+						break;
+					}
+				}
+			}
+
+			int ROFFS = input.readInt(RBITS);
+			int RLEN = RSTART + ROFFS;
+
+			for (int i = 0; i < RLEN; i++)
+				BITS.append(BIT);
+
+			LEN += RLEN;
+			if (LEN > NBITS)
+				throw new UnknownContentTypeException("LEN: " + LEN + "; NBITS: " + NBITS +
+						"; LEN MUST be less than or equal to NBITS.");
+
+			if (LEN == NBITS)
+				return BITS.toString();
+
+			if (LEN == 4129)
+				BIT = input.readBit();
+			else
+				BIT = 1 - BIT;
+		}
+	}
+
+	private String shortRunBitStringDecode(int NBITS, BitInputStream input) throws IOException {
+		assert  NBITS >= 0;
+
+		if (NBITS == 0)
+			return "";
+
+		int[][] huffmanCodesForShortRunLengths = {
+				{0, 1, 1}, // Huffman Code, RSTART, RBITS
+				{Integer.parseInt("10", 2), 3, 1},
+				{Integer.parseInt("110", 2), 5, 1},
+				{Integer.parseInt("1110", 2), 7, 2},
+				{Integer.parseInt("11110", 2), 11, 2},
+				{Integer.parseInt("11111", 2), 15, 4}
+		};
+
+		int LEN = 0;
+		StringBuilder BITS = new StringBuilder();
+
+		int BIT = input.readBit();
+		int RSTART = 0;
+		int RBITS = 0;
+
+		while (true) {
+			int code = 0;
+			for (int i = 0; i < 7; i++) {
+				code = code << 1 | input.readBit();
+
+				if (code > 63)
+					throw new UnknownContentTypeException("Code: " + code +
+							"; Highest Huffman Code for Long Run Lengths is b111111");
+
+				for (int[] huffmanCode : huffmanCodesForShortRunLengths) {
+					if (code == huffmanCode[0]) {
+						RSTART = huffmanCode[1];
+						RBITS = huffmanCode[2];
+						break;
+					}
+				}
+			}
+
+			int ROFFS = input.readInt(RBITS);
+			int RLEN = RSTART + ROFFS;
+
+			for (int i = 0; i < RLEN; i++)
+				BITS.append(BIT);
+
+			LEN += RLEN;
+			if (LEN > NBITS)
+				throw new UnknownContentTypeException("LEN: " + LEN + "; NBITS: " + NBITS +
+						"; LEN MUST be less than or equal to NBITS.");
+
+			if (LEN == NBITS)
+				return BITS.toString();
+
+			BIT = 1 - BIT;
+		}
+	}
+
+	private int[] codedBlockFlagsDecode(int FTYPE, int NSBS, long NBS, BitInputStream input) throws IOException {
+		if (FTYPE == 0) // intra frame
+			return new int[NSBS];
+
+		// inter frame
+		int NBITS = NSBS;
+		String BITS = longRunBitStringDecode(NBITS, input);
+
+		int[] SBPCODED = new int[NSBS];
+		for (int sbi = 0; sbi < NSBS; sbi++) {
+			SBPCODED[sbi] = Character.getNumericValue(BITS.charAt(sbi));
+		}
+
+		NBITS = 0;
+		for (int sbpcodedI : SBPCODED)
+			if (sbpcodedI == 0)
+				NBITS++;
+
+		BITS = longRunBitStringDecode(NBITS, input);
+
+		for (int sbi = 0; sbi < NSBS; sbi++) {
+			SBPCODED[sbi] = Character.getNumericValue(BITS.charAt(sbi));
+		}
+
+		NBITS = 0;
+		for (int sbpcodedI : SBPCODED)
+			if (sbpcodedI == 1)
+				NBITS++;
+
+		BITS = shortRunBitStringDecode(NBITS, input);
+
+		// For each block in coded order—indexed by bi:
+		//   i. Assign sbi the index of the super block containing block bi .
+		//   ii. If SBPCODED[sbi] is zero, assign BCODED[bi] the value SBFCODED[sbi].
+		//   iii. Otherwise, remove the bit at the head of the string BITS and assign it to BCODED[bi].
+
+		return null; // TODO
+	}
 }
