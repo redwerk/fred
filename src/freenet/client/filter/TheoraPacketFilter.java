@@ -483,11 +483,161 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 
 		BITS = shortRunBitStringDecode(NBITS, input);
 
-		// For each block in coded order—indexed by bi:
-		//   i. Assign sbi the index of the super block containing block bi .
-		//   ii. If SBPCODED[sbi] is zero, assign BCODED[bi] the value SBFCODED[sbi].
+		// TODO
+		//  For each block in coded order—indexed by bi:
+		//     i. Assign sbi the index of the super block containing block bi .
+		//    ii. If SBPCODED[sbi] is zero, assign BCODED[bi] the value SBFCODED[sbi].
 		//   iii. Otherwise, remove the bit at the head of the string BITS and assign it to BCODED[bi].
 
-		return null; // TODO
+		return null; // TODO: return BCODED
+	}
+
+	private int[] macroBlockCodingModes(int FTYPE, int NMBS, long NBS, int[] BCODED, BitInputStream input) throws IOException {
+		if (FTYPE == 0) { // intra frame
+			int[] MBMODES = new int[NMBS];
+			for (int i = 0; i < NMBS; i++)
+				MBMODES[i] = 1;
+			return MBMODES;
+		}
+
+		// inter frame
+		int MSCHEME = input.readInt(3);
+		int[] MALPHABET;
+		if (MSCHEME == 0) {
+			MALPHABET = new int[8];
+			for (int MODE = 0; MODE <= 7; MODE++) {
+				int mi = input.readInt(3);
+				MALPHABET[mi] = MODE;
+			}
+		}
+		else if (MSCHEME != 7) {
+			int[][] macroBlockModeSchemes = {
+					{3, 4, 2, 0, 1, 5, 6, 7},
+					{3, 4, 0, 2, 1, 5, 6, 7},
+					{3, 2, 4, 0, 1, 5, 6, 7},
+					{3, 2, 0, 4, 1, 5, 6, 7},
+					{0, 3, 4, 2, 1, 5, 6, 7},
+					{0, 5, 3, 4, 2, 1, 6, 7}
+			};
+			MALPHABET = macroBlockModeSchemes[MSCHEME + 1];
+		}
+
+		// TODO: page 71
+		//  For each consecutive macro block in coded order (cf. Section 2.4)—indexed by mbi:
+		//    i. If a block bi in the luma plane of macro block mbi exists such that BCODED[bi ] is 1:
+		//      A. If MSCHEME is not 7, read one bit at a time until one of
+		//         the Huffman codes in Table 7.19 is recognized, and assign
+		//         MBMODES[mbi ] the value MALPHABET[mi ], where mi
+		//         is the index of the Huffman code decoded.
+		//      B. Otherwise, read a 3-bit unsigned integer as MBMODES[mbi ].
+		//    ii. Otherwise, if no luma-plane blocks in the macro block are coded,
+		//        assign MBMODES[mbi ] the value 0 (INTER NOMV).
+
+		return null; // TODO: MBMODES
+	}
+
+	private MotionVector motionVectorDecode(int MVMODE, BitInputStream input) throws IOException {
+		Map<String, Integer> huffmanCodesForMotionVectorComponents = new HashMap<>(63);
+		huffmanCodesForMotionVectorComponents.put("000", 0);
+		huffmanCodesForMotionVectorComponents.put("001", 1);
+		huffmanCodesForMotionVectorComponents.put("0110", 2);
+		huffmanCodesForMotionVectorComponents.put("1000", 3);
+		huffmanCodesForMotionVectorComponents.put("101000", 4);
+		huffmanCodesForMotionVectorComponents.put("101010", 5);
+		huffmanCodesForMotionVectorComponents.put("101100", 6);
+		huffmanCodesForMotionVectorComponents.put("101110", 7);
+		huffmanCodesForMotionVectorComponents.put("1100000", 8);
+		huffmanCodesForMotionVectorComponents.put("1100010", 9);
+		huffmanCodesForMotionVectorComponents.put("1100100", 10);
+		huffmanCodesForMotionVectorComponents.put("1100110", 11);
+		huffmanCodesForMotionVectorComponents.put("1101000", 12);
+		huffmanCodesForMotionVectorComponents.put("1101010", 13);
+		huffmanCodesForMotionVectorComponents.put("1101100", 14);
+		huffmanCodesForMotionVectorComponents.put("1101110", 15);
+		huffmanCodesForMotionVectorComponents.put("11100000", 16);
+		huffmanCodesForMotionVectorComponents.put("11100010", 17);
+		huffmanCodesForMotionVectorComponents.put("11100100", 18);
+		huffmanCodesForMotionVectorComponents.put("11100110", 19);
+		huffmanCodesForMotionVectorComponents.put("11101000", 20);
+		huffmanCodesForMotionVectorComponents.put("11101010", 21);
+		huffmanCodesForMotionVectorComponents.put("11101100", 22);
+		huffmanCodesForMotionVectorComponents.put("11101110", 23);
+		huffmanCodesForMotionVectorComponents.put("11110000", 24);
+		huffmanCodesForMotionVectorComponents.put("11110010", 25);
+		huffmanCodesForMotionVectorComponents.put("11110100", 26);
+		huffmanCodesForMotionVectorComponents.put("11110110", 27);
+		huffmanCodesForMotionVectorComponents.put("11111000", 28);
+		huffmanCodesForMotionVectorComponents.put("11111010", 29);
+		huffmanCodesForMotionVectorComponents.put("11111100", 30);
+		huffmanCodesForMotionVectorComponents.put("11111110", 31);
+		huffmanCodesForMotionVectorComponents.put("010", -1);
+		huffmanCodesForMotionVectorComponents.put("0111", -2);
+		huffmanCodesForMotionVectorComponents.put("1001", -3);
+		huffmanCodesForMotionVectorComponents.put("101001", -4);
+		huffmanCodesForMotionVectorComponents.put("101011", -5);
+		huffmanCodesForMotionVectorComponents.put("101101", -6);
+		huffmanCodesForMotionVectorComponents.put("101111", -7);
+		huffmanCodesForMotionVectorComponents.put("1100001", -8);
+		huffmanCodesForMotionVectorComponents.put("1100011", -9);
+		huffmanCodesForMotionVectorComponents.put("1100101", -10);
+		huffmanCodesForMotionVectorComponents.put("1100111", -11);
+		huffmanCodesForMotionVectorComponents.put("1101001", -12);
+		huffmanCodesForMotionVectorComponents.put("1101011", -13);
+		huffmanCodesForMotionVectorComponents.put("1101101", -14);
+		huffmanCodesForMotionVectorComponents.put("1101111", -15);
+		huffmanCodesForMotionVectorComponents.put("11100001", -16);
+		huffmanCodesForMotionVectorComponents.put("11100011", -17);
+		huffmanCodesForMotionVectorComponents.put("11100101", -18);
+		huffmanCodesForMotionVectorComponents.put("11100111", -19);
+		huffmanCodesForMotionVectorComponents.put("11101001", -20);
+		huffmanCodesForMotionVectorComponents.put("11101011", -21);
+		huffmanCodesForMotionVectorComponents.put("11101101", -22);
+		huffmanCodesForMotionVectorComponents.put("11101111", -23);
+		huffmanCodesForMotionVectorComponents.put("11110001", -24);
+		huffmanCodesForMotionVectorComponents.put("11110011", -25);
+		huffmanCodesForMotionVectorComponents.put("11110101", -26);
+		huffmanCodesForMotionVectorComponents.put("11110111", -27);
+		huffmanCodesForMotionVectorComponents.put("11111001", -28);
+		huffmanCodesForMotionVectorComponents.put("11111011", -29);
+		huffmanCodesForMotionVectorComponents.put("11111101", -30);
+		huffmanCodesForMotionVectorComponents.put("11111111", -31);
+
+		MotionVector motionVector = new MotionVector();
+
+		if (MVMODE == 0) {
+			String code = String.valueOf(input.readBit());
+			while (!huffmanCodesForMotionVectorComponents.containsKey(code)) {
+				code += input.readBit();
+
+				if (code.length() > 8)
+					throw new UnknownContentTypeException("Unknown Huffman code for motion vector components: " + code);
+			}
+			motionVector.MVX = huffmanCodesForMotionVectorComponents.get(code);
+
+			code = String.valueOf(input.readBit());
+			while (!huffmanCodesForMotionVectorComponents.containsKey(code)) {
+				code += input.readBit();
+
+				if (code.length() > 8)
+					throw new UnknownContentTypeException("Unknown Huffman code for motion vector components: " + code);
+			}
+			motionVector.MVY = huffmanCodesForMotionVectorComponents.get(code);
+		}
+		else {
+			motionVector.MVX = input.readInt(5);
+			if (input.readBit() == 1)
+				motionVector.MVX *= -1;
+
+			motionVector.MVY = input.readInt(5);
+			if (input.readBit() == 1)
+				motionVector.MVY *= -1;
+		}
+
+		return motionVector;
+	}
+
+	class MotionVector {
+		private int MVX;
+		private int MVY;
 	}
 }
