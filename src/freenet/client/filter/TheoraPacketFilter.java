@@ -1,5 +1,6 @@
 package freenet.client.filter;
 
+import java.awt.*;
 import java.io.*;
 import java.nio.ByteOrder;
 import java.util.*;
@@ -536,108 +537,150 @@ public class TheoraPacketFilter implements CodecPacketFilter {
 		return null; // TODO: MBMODES
 	}
 
-	private MotionVector motionVectorDecode(int MVMODE, BitInputStream input) throws IOException {
-		Map<String, Integer> huffmanCodesForMotionVectorComponents = new HashMap<>(63);
-		huffmanCodesForMotionVectorComponents.put("000", 0);
-		huffmanCodesForMotionVectorComponents.put("001", 1);
-		huffmanCodesForMotionVectorComponents.put("0110", 2);
-		huffmanCodesForMotionVectorComponents.put("1000", 3);
-		huffmanCodesForMotionVectorComponents.put("101000", 4);
-		huffmanCodesForMotionVectorComponents.put("101010", 5);
-		huffmanCodesForMotionVectorComponents.put("101100", 6);
-		huffmanCodesForMotionVectorComponents.put("101110", 7);
-		huffmanCodesForMotionVectorComponents.put("1100000", 8);
-		huffmanCodesForMotionVectorComponents.put("1100010", 9);
-		huffmanCodesForMotionVectorComponents.put("1100100", 10);
-		huffmanCodesForMotionVectorComponents.put("1100110", 11);
-		huffmanCodesForMotionVectorComponents.put("1101000", 12);
-		huffmanCodesForMotionVectorComponents.put("1101010", 13);
-		huffmanCodesForMotionVectorComponents.put("1101100", 14);
-		huffmanCodesForMotionVectorComponents.put("1101110", 15);
-		huffmanCodesForMotionVectorComponents.put("11100000", 16);
-		huffmanCodesForMotionVectorComponents.put("11100010", 17);
-		huffmanCodesForMotionVectorComponents.put("11100100", 18);
-		huffmanCodesForMotionVectorComponents.put("11100110", 19);
-		huffmanCodesForMotionVectorComponents.put("11101000", 20);
-		huffmanCodesForMotionVectorComponents.put("11101010", 21);
-		huffmanCodesForMotionVectorComponents.put("11101100", 22);
-		huffmanCodesForMotionVectorComponents.put("11101110", 23);
-		huffmanCodesForMotionVectorComponents.put("11110000", 24);
-		huffmanCodesForMotionVectorComponents.put("11110010", 25);
-		huffmanCodesForMotionVectorComponents.put("11110100", 26);
-		huffmanCodesForMotionVectorComponents.put("11110110", 27);
-		huffmanCodesForMotionVectorComponents.put("11111000", 28);
-		huffmanCodesForMotionVectorComponents.put("11111010", 29);
-		huffmanCodesForMotionVectorComponents.put("11111100", 30);
-		huffmanCodesForMotionVectorComponents.put("11111110", 31);
-		huffmanCodesForMotionVectorComponents.put("010", -1);
-		huffmanCodesForMotionVectorComponents.put("0111", -2);
-		huffmanCodesForMotionVectorComponents.put("1001", -3);
-		huffmanCodesForMotionVectorComponents.put("101001", -4);
-		huffmanCodesForMotionVectorComponents.put("101011", -5);
-		huffmanCodesForMotionVectorComponents.put("101101", -6);
-		huffmanCodesForMotionVectorComponents.put("101111", -7);
-		huffmanCodesForMotionVectorComponents.put("1100001", -8);
-		huffmanCodesForMotionVectorComponents.put("1100011", -9);
-		huffmanCodesForMotionVectorComponents.put("1100101", -10);
-		huffmanCodesForMotionVectorComponents.put("1100111", -11);
-		huffmanCodesForMotionVectorComponents.put("1101001", -12);
-		huffmanCodesForMotionVectorComponents.put("1101011", -13);
-		huffmanCodesForMotionVectorComponents.put("1101101", -14);
-		huffmanCodesForMotionVectorComponents.put("1101111", -15);
-		huffmanCodesForMotionVectorComponents.put("11100001", -16);
-		huffmanCodesForMotionVectorComponents.put("11100011", -17);
-		huffmanCodesForMotionVectorComponents.put("11100101", -18);
-		huffmanCodesForMotionVectorComponents.put("11100111", -19);
-		huffmanCodesForMotionVectorComponents.put("11101001", -20);
-		huffmanCodesForMotionVectorComponents.put("11101011", -21);
-		huffmanCodesForMotionVectorComponents.put("11101101", -22);
-		huffmanCodesForMotionVectorComponents.put("11101111", -23);
-		huffmanCodesForMotionVectorComponents.put("11110001", -24);
-		huffmanCodesForMotionVectorComponents.put("11110011", -25);
-		huffmanCodesForMotionVectorComponents.put("11110101", -26);
-		huffmanCodesForMotionVectorComponents.put("11110111", -27);
-		huffmanCodesForMotionVectorComponents.put("11111001", -28);
-		huffmanCodesForMotionVectorComponents.put("11111011", -29);
-		huffmanCodesForMotionVectorComponents.put("11111101", -30);
-		huffmanCodesForMotionVectorComponents.put("11111111", -31);
+	private static final Map<String, Integer> HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS = new HashMap<>(63);
+	static {
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("000", 0);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("001", 1);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("0110", 2);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1000", 3);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("101000", 4);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("101010", 5);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("101100", 6);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("101110", 7);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1100000", 8);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1100010", 9);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1100100", 10);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1100110", 11);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1101000", 12);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1101010", 13);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1101100", 14);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1101110", 15);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11100000", 16);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11100010", 17);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11100100", 18);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11100110", 19);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11101000", 20);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11101010", 21);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11101100", 22);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11101110", 23);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11110000", 24);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11110010", 25);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11110100", 26);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11110110", 27);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11111000", 28);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11111010", 29);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11111100", 30);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11111110", 31);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("010", -1);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("0111", -2);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1001", -3);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("101001", -4);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("101011", -5);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("101101", -6);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("101111", -7);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1100001", -8);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1100011", -9);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1100101", -10);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1100111", -11);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1101001", -12);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1101011", -13);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1101101", -14);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("1101111", -15);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11100001", -16);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11100011", -17);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11100101", -18);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11100111", -19);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11101001", -20);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11101011", -21);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11101101", -22);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11101111", -23);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11110001", -24);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11110011", -25);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11110101", -26);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11110111", -27);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11111001", -28);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11111011", -29);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11111101", -30);
+		HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.put("11111111", -31);
+	}
 
-		MotionVector motionVector = new MotionVector();
+	private Point motionVectorDecode(int MVMODE, BitInputStream input) throws IOException {
+		Point motionVector = new Point();
 
 		if (MVMODE == 0) {
 			String code = String.valueOf(input.readBit());
-			while (!huffmanCodesForMotionVectorComponents.containsKey(code)) {
+			while (!HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.containsKey(code)) {
 				code += input.readBit();
 
 				if (code.length() > 8)
 					throw new UnknownContentTypeException("Unknown Huffman code for motion vector components: " + code);
 			}
-			motionVector.MVX = huffmanCodesForMotionVectorComponents.get(code);
+			motionVector.x = HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.get(code);
 
 			code = String.valueOf(input.readBit());
-			while (!huffmanCodesForMotionVectorComponents.containsKey(code)) {
+			while (!HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.containsKey(code)) {
 				code += input.readBit();
 
 				if (code.length() > 8)
 					throw new UnknownContentTypeException("Unknown Huffman code for motion vector components: " + code);
 			}
-			motionVector.MVY = huffmanCodesForMotionVectorComponents.get(code);
+			motionVector.y = HUFFMAN_CODES_FOR_MOTION_VECTOR_COMPONENTS.get(code);
 		}
 		else {
-			motionVector.MVX = input.readInt(5);
+			motionVector.x = input.readInt(5);
 			if (input.readBit() == 1)
-				motionVector.MVX *= -1;
+				motionVector.x *= -1;
 
-			motionVector.MVY = input.readInt(5);
+			motionVector.y = input.readInt(5);
 			if (input.readBit() == 1)
-				motionVector.MVY *= -1;
+				motionVector.y *= -1;
 		}
 
 		return motionVector;
 	}
 
-	class MotionVector {
-		private int MVX;
-		private int MVY;
+	private Point[] macroBlockMotionVectorDecode(byte PF, int NMBS, byte[] MBMODES, long NBS, byte[] BCODED,
+												 BitInputStream input) throws IOException {
+		Point motionVector;
+		Point LAST1 = new Point(0, 0);
+		Point LAST2 = new Point(0, 0);
+
+		int MVMODE = input.readBit();
+
+//		Point[] MVECTS = new Point[NBS];
+
+		for (int mbi = 0; mbi < NMBS; mbi++) {
+			switch (MBMODES[mbi]) {
+				case 7: // INTER_MV_FOUR
+					// TODO: page 76, 3.a
+					break;
+				case 6: // INTER_GOLDEN_MV
+					motionVector = motionVectorDecode(MVMODE, input);
+					break;
+				case 4: // INTER_MV_LAST2
+					motionVector = LAST2;
+					LAST2 = LAST1;
+					LAST1 = motionVector;
+					break;
+				case 3: // INTER_MV_LAST
+					motionVector = LAST1;
+					break;
+				case 2: // INTER_MV
+					motionVector = motionVectorDecode(MVMODE, input);
+					LAST2 = LAST1;
+					LAST1 = motionVector;
+					break;
+				case 5: // INTER_GOLDEN_NOMV
+				case 1: // INTRA
+				case 0: // INTER_NOMV
+					motionVector = new Point(0, 0);
+			}
+			if (MBMODES[mbi] != 7) { // not INTER_MV_FOUR
+				// TODO: for each coded block bi in macro block mbi:
+				//  i. Assign MVECTS[bi] the value (MVX, MVY).
+			}
+		}
+
+		return null;
 	}
 }
