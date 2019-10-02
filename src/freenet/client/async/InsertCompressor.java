@@ -3,7 +3,6 @@ package freenet.client.async;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.concurrent.TimeUnit;
 
 import freenet.client.InsertException;
 import freenet.client.InsertException.InsertExceptionMode;
@@ -149,7 +148,8 @@ public class InsertCompressor implements CompressJob {
 						try {
 							if (comp.compress(is, os, origSize, bestCompressedDataSize,
 									amountOfDataToCheckCompressionRatio, minimumCompressionPercentage) == -1) {
-								throw new RuntimeException(Compressor.COMPRESSION_HAS_NO_EFFECT_MESSAGE);
+								Logger.minor(this, Compressor.COMPRESSION_HAS_NO_EFFECT_MESSAGE);
+								throw new CompressionOutputSizeException(Compressor.COMPRESSION_HAS_NO_EFFECT_MESSAGE);
 							}
 						} catch (CompressionOutputSizeException e) {
 							if(hasher != null) {

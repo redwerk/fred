@@ -18,4 +18,9 @@ public class CompressionOutputSizeException extends IOException {
 		super("The output was too big for the buffer; estimated size: " + sz);
 		estimatedSize = sz;
 	}
+
+	public CompressionOutputSizeException(String message) {
+		super(message);
+		estimatedSize = -1;
+	}
 }

@@ -16,6 +16,6 @@ abstract class AbstractCompressor implements Compressor {
         assert minimumCompressionPercentage != 0;
 
         long compressionPercentage = 100 - compressedDataVolume * 100 / rawDataVolume;
-        return compressionPercentage < minimumCompressionPercentage;
+        return compressionPercentage >= minimumCompressionPercentage;
     }
 }
