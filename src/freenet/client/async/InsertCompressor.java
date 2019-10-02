@@ -20,7 +20,7 @@ import freenet.support.api.BucketFactory;
 import freenet.support.api.RandomAccessBucket;
 import freenet.support.compress.CompressJob;
 import freenet.support.compress.CompressionOutputSizeException;
-import freenet.support.compress.CompressionRatioException;
+import freenet.support.compress.Compressor;
 import freenet.support.compress.InvalidCompressionCodecException;
 import freenet.support.compress.Compressor.COMPRESSOR_TYPE;
 import freenet.support.io.Closer;
@@ -147,9 +147,11 @@ public class InsertCompressor implements CompressJob {
 							is = hasher = new MultiHashInputStream(is, generateHashes);
 						}
 						try {
-							comp.compress(is, os, origSize, bestCompressedDataSize,
-									amountOfDataToCheckCompressionRatio, minimumCompressionPercentage);
-						} catch (CompressionOutputSizeException | CompressionRatioException e) {
+							if (comp.compress(is, os, origSize, bestCompressedDataSize,
+									amountOfDataToCheckCompressionRatio, minimumCompressionPercentage) == -1) {
+								throw new RuntimeException(Compressor.COMPRESSION_HAS_NO_EFFECT_MESSAGE);
+							}
+						} catch (CompressionOutputSizeException e) {
 							if(hasher != null) {
 								is.skip(Long.MAX_VALUE);
 								hashes = hasher.getResults();

@@ -19,6 +19,8 @@ public interface Compressor {
 
 	String DEFAULT_COMPRESSORDESCRIPTOR = null;
 
+	String COMPRESSION_HAS_NO_EFFECT_MESSAGE = "Compression has no effect";
+
 	enum COMPRESSOR_TYPE implements Compressor {
 	    // WARNING: Changing non-transient members on classes that are Serializable can result in
 	    // restarting downloads or losing uploads.
@@ -150,7 +152,7 @@ public interface Compressor {
 		@Override
 		public long compress(InputStream is, OutputStream os, long maxReadLength, long maxWriteLength,
 							 long amountOfDataToCheckCompressionRatio, int minimumCompressionPercentage)
-				throws IOException, CompressionRatioException {
+				throws IOException {
 			return compressor.compress(is, os, maxReadLength, maxWriteLength, amountOfDataToCheckCompressionRatio, minimumCompressionPercentage);
 		}
 
@@ -201,11 +203,11 @@ public interface Compressor {
 	 * @param amountOfDataToCheckCompressionRatio The data amount after compression of which we will check whether we have got the desired effect.
 	 * @param minimumCompressionPercentage The minimal desired compression effect, %. A value of 0 means that the
 	 *                                        compression effect will not be checked.
-	 * @throws CompressionRatioException If the desired compression effect is not achieved.
+	 * @return The compressed data size; -1 If the desired compression effect is not achieved.
 	 */
 	long compress(InputStream input, OutputStream output, long maxReadLength, long maxWriteLength,
 				  long amountOfDataToCheckCompressionRatio, int minimumCompressionPercentage)
-			throws IOException, CompressionRatioException;
+			throws IOException;
 
 	/**
 	 * Decompress data.

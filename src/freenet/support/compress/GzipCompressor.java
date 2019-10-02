@@ -39,7 +39,7 @@ public class GzipCompressor extends AbstractCompressor {
 	@Override
 	public long compress(InputStream is, OutputStream os, long maxReadLength, long maxWriteLength,
 						 long amountOfDataToCheckCompressionRatio, int minimumCompressionPercentage)
-			throws IOException, CompressionRatioException {
+			throws IOException {
 		if(maxReadLength < 0)
 			throw new IllegalArgumentException();
 		GZIPOutputStream gos = null;
@@ -64,7 +64,9 @@ public class GzipCompressor extends AbstractCompressor {
 					throw new CompressionOutputSizeException();
 
 				if (++i == iterationToCheckCompressionRatio && minimumCompressionPercentage != 0) {
-					checkCompressionEffect(read, cos.written(), minimumCompressionPercentage);
+					if (!isCompressionMakeSense(read, cos.written(), minimumCompressionPercentage)) {
+						return -1;
+					}
 				}
 			}
 			gos.flush();

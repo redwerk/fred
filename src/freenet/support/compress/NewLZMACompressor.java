@@ -65,7 +65,7 @@ public class NewLZMACompressor extends AbstractCompressor {
 	@Override
 	public long compress(InputStream is, OutputStream os, long maxReadLength, long maxWriteLength,
 						 final long amountOfDataToCheckCompressionRatio, final int minimumCompressionPercentage)
-			throws IOException, CompressionRatioException {
+			throws IOException {
 		CountedInputStream cis = null;
 		CountedOutputStream cos = null;
 		cis = new CountedInputStream(is);
@@ -89,18 +89,16 @@ public class NewLZMACompressor extends AbstractCompressor {
 				@Override
 				public void SetProgress(long processedInSize, long processedOutSize) {
 					if (compressionEffectShouldBeChecked && processedInSize > amountOfDataToCheckCompressionRatio) {
-						try {
-							checkCompressionEffect(processedInSize, processedOutSize, minimumCompressionPercentage);
-						} catch (CompressionRatioException e) {
-							throw new RuntimeException(e); // need to escape from foreign API :-(
+						if (!isCompressionMakeSense(processedInSize, processedOutSize, minimumCompressionPercentage)) {
+							throw new RuntimeException(COMPRESSION_HAS_NO_EFFECT_MESSAGE);
 						}
 						compressionEffectShouldBeChecked = false;
 					}
 				}
 			});
 		} catch (RuntimeException e) {
-			if (e.getCause() instanceof CompressionRatioException) {
-				throw (CompressionRatioException) e.getCause();
+			if (COMPRESSION_HAS_NO_EFFECT_MESSAGE.equals(e.getMessage())) {
+				return -1;
 			} else {
 				throw e;
 			}
