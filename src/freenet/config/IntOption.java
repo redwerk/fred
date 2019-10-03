@@ -9,6 +9,7 @@ import freenet.support.api.IntCallback;
 
 /** Integer config variable */
 public class IntOption extends Option<Integer> {
+
 	private final Dimension dimension;
 
 	public IntOption(SubConfig conf, String optionName, String defaultValueString, int sortOrder, boolean expert,
@@ -47,11 +48,15 @@ public class IntOption extends Option<Integer> {
 
 	@Override
 	protected Integer parseString(String val) throws InvalidConfigValueException {
-		Integer x;
+		int x;
 		try {
 			x = Fields.parseInt(val, dimension);
 		} catch (NumberFormatException e) {
-			throw new InvalidConfigValueException(l10n("parseError", "val", val));
+			try {
+				x = Fields.parseInt(val);
+			} catch (NumberFormatException e1) {
+				throw new InvalidConfigValueException(l10n("parseError", "val", val));
+			}
 		}
 		return x;
 	}
