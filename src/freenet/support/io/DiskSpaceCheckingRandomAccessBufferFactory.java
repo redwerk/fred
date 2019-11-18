@@ -41,7 +41,7 @@ public class DiskSpaceCheckingRandomAccessBufferFactory implements LockableRando
             if(dir.getUsableSpace() > size + minDiskSpace)
                 return underlying.makeRAF(size);
             else
-                throw new InsufficientDiskSpaceException();
+                throw new InsufficientDiskSpaceException(dir, size);
         } finally {
             lock.unlock();
         }

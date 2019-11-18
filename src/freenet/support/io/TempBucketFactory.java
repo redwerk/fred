@@ -550,7 +550,7 @@ public class TempBucketFactory implements BucketFactory, LockableRandomAccessBuf
 		underlyingDiskRAFFactory.enableCrypto(reallyEncrypt);
 		this.minDiskSpace = minDiskSpace;
 		this.diskRAFFactory = new DiskSpaceCheckingRandomAccessBufferFactory(underlyingDiskRAFFactory, 
-		        filenameGenerator.getDir(), minDiskSpace - maxRamUsed);
+		        filenameGenerator.getDir(), minDiskSpace - maxRamUsed); // probably +maxRamUsed?
 		this.secret = masterSecret;
 	}
 	

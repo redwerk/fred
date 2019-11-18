@@ -32,10 +32,7 @@ import freenet.support.api.Bucket;
 import freenet.support.api.LockableRandomAccessBuffer;
 import freenet.support.api.RandomAccessBucket;
 import freenet.support.compress.Compressor.COMPRESSOR_TYPE;
-import freenet.support.io.BucketTools;
-import freenet.support.io.NotPersistentBucket;
-import freenet.support.io.NullOutputStream;
-import freenet.support.io.ResumeFailedException;
+import freenet.support.io.*;
 
 /**
  * Attempt to insert a file. May include metadata.
@@ -174,7 +171,7 @@ class SingleFileInserter implements ClientPutState, Serializable {
 		}
 	}
 	
-	void onCompressedInner(CompressionOutput output, ClientContext context) throws InsertException {
+	void onCompressedInner(CompressionOutput output, ClientContext context) throws InsertException, InterruptedException {
 		HashResult[] hashes = output.hashes;
 		long origSize = block.getData().size();
 		byte[] hashThisLayerOnly = null;
@@ -373,12 +370,37 @@ class SingleFileInserter implements ClientPutState, Serializable {
 			boolean allowSizes = (cmode == CompatibilityMode.COMPAT_CURRENT || cmode.ordinal() >= CompatibilityMode.COMPAT_1255.ordinal());
 			if(metadata) allowSizes = false;
 			SplitHandler sh = new SplitHandler(origSize, compressedDataSize, allowSizes);
-			SplitFileInserter sfi = new SplitFileInserter(persistent, parent, sh, 
-			        dataRAF, shouldFreeData, ctx, context, origSize, bestCodec, 
-			        block.clientMetadata, metadata, archiveType, cryptoAlgorithm, forceCryptoKey,
-			        hashThisLayerOnly, hashes, ctx.dontCompress, parent.getMinSuccessFetchBlocks(),
-			        parent.getTotalBlocks(), origDataLength, origCompressedDataLength, 
-			        realTimeFlag, token);
+			SplitFileInserter sfi = null;
+			while (sfi == null) {
+				try {
+					sfi = new SplitFileInserter(persistent, parent, sh,
+							dataRAF, shouldFreeData, ctx, context, origSize, bestCodec,
+							block.clientMetadata, metadata, archiveType, cryptoAlgorithm, forceCryptoKey,
+							hashThisLayerOnly, hashes, ctx.dontCompress, parent.getMinSuccessFetchBlocks(),
+							parent.getTotalBlocks(), origDataLength, origCompressedDataLength,
+							realTimeFlag, token);
+				} catch (InsertException e) {
+					if (e.getCause() instanceof InsufficientDiskSpaceException
+							&& ((InsufficientDiskSpaceException) e.getCause()).getSize() > 0
+							&& ((InsufficientDiskSpaceException) e.getCause()).getDir() != null) {
+						InsufficientDiskSpaceException idse = (InsufficientDiskSpaceException) e.getCause();
+						if (idse.getSize() > 0 && idse.getDir() != null) {
+							// TODO: alert
+							long minDiskSpace = context.getConfig().get("node").getLong("minDiskFreeLongTerm");
+							// waiting for available disk space
+							while (idse.getDir().getUsableSpace() < idse.getSize() + minDiskSpace) {
+								synchronized (this) {
+									wait(1_000);
+								}
+							}
+						} else {
+							throw e;
+						}
+					} else {
+						throw e;
+					}
+				}
+			}
 			sh.sfi = sfi;
 			if(logMINOR)
 				Logger.minor(this, "Inserting as splitfile: "+sfi+" for "+sh+" for "+this);
