@@ -615,7 +615,7 @@ public class BaseL10n {
 		String result = getString(key);
 
 		for (int i = 0; i < patterns.length; i++) {
-			result = result.replaceAll("\\$\\{" + patterns[i] + "\\}", quoteReplacement(values[i]));
+			result = replace(result, patterns[i], values[i]);
 		}
 
 		return result;
@@ -629,7 +629,11 @@ public class BaseL10n {
 	 * @return String
 	 */
 	public String getString(String key, String pattern, String value) {
-		return getString(key, new String[]{pattern}, new String[]{value}); // FIXME code efficiently!
+		return replace(getString(key), pattern, value);
+	}
+
+	private String replace(String key, String pattern, String value) {
+		return key.replaceAll("\\$\\{" + pattern + "}", quoteReplacement(value));
 	}
 
 	/**

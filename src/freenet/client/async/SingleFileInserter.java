@@ -25,6 +25,8 @@ import freenet.keys.BaseClientKey;
 import freenet.keys.CHKBlock;
 import freenet.keys.FreenetURI;
 import freenet.keys.SSKBlock;
+import freenet.l10n.NodeL10n;
+import freenet.node.useralerts.SimpleUserAlert;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
@@ -385,8 +387,17 @@ class SingleFileInserter implements ClientPutState, Serializable {
 							&& ((InsufficientDiskSpaceException) e.getCause()).getDir() != null) {
 						InsufficientDiskSpaceException idse = (InsufficientDiskSpaceException) e.getCause();
 						if (idse.getSize() > 0 && idse.getDir() != null) {
-							// TODO: alert
 							long minDiskSpace = context.getConfig().get("node").getLong("minDiskFreeLongTerm");
+							context.postUserAlert(new SimpleUserAlert(true,
+									NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.title"),
+									NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.text",
+											new String[] {"needed", "filename"},
+											new String[] {
+													Long.toString(idse.getSize() + minDiskSpace - idse.getDir().getUsableSpace()),
+													targetFilename}),
+									NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.shortText",
+											"filename", targetFilename),
+									(short) 0));
 							// waiting for available disk space
 							while (idse.getDir().getUsableSpace() < idse.getSize() + minDiskSpace) {
 								synchronized (this) {
