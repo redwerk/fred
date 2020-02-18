@@ -1,5 +1,6 @@
 package freenet.client.async;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
 import java.net.MalformedURLException;
@@ -146,6 +147,11 @@ class SingleFileInserter implements ClientPutState, Serializable {
 	}
 	
 	public void start(ClientContext context) throws InsertException {
+		long neededSpace = block.getData().size() * 3 + context.getConfig().get("node").getLong("minDiskFreeLongTerm");
+		long availableSpace = new File(System.getProperty("user.dir")).getUsableSpace();
+		if (neededSpace > availableSpace) {
+			discSpaceAlert(context, neededSpace, availableSpace);
+		}
 		tryCompress(context);
 	}
 
@@ -387,19 +393,10 @@ class SingleFileInserter implements ClientPutState, Serializable {
 							&& ((InsufficientDiskSpaceException) e.getCause()).getDir() != null) {
 						InsufficientDiskSpaceException idse = (InsufficientDiskSpaceException) e.getCause();
 						if (idse.getSize() > 0 && idse.getDir() != null) {
-							long minDiskSpace = context.getConfig().get("node").getLong("minDiskFreeLongTerm");
-							context.postUserAlert(new SimpleUserAlert(true,
-									NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.title"),
-									NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.text",
-											new String[] {"needed", "filename"},
-											new String[] {
-													Long.toString(idse.getSize() + minDiskSpace - idse.getDir().getUsableSpace()),
-													targetFilename}),
-									NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.shortText",
-											"filename", targetFilename),
-									(short) 0));
+							long neededSpace = idse.getSize() + context.getConfig().get("node").getLong("minDiskFreeLongTerm");
+							discSpaceAlert(context, neededSpace, idse.getDir().getUsableSpace());
 							// waiting for available disk space
-							while (idse.getDir().getUsableSpace() < idse.getSize() + minDiskSpace) {
+							while (idse.getDir().getUsableSpace() < neededSpace) {
 								synchronized (this) {
 									wait(1_000);
 								}
@@ -1104,4 +1101,16 @@ class SingleFileInserter implements ClientPutState, Serializable {
         // Ignore.
     }
 
+    private void discSpaceAlert(ClientContext context, long neededSpace, long availableSpace) {
+		context.postUserAlert(new SimpleUserAlert(true,
+				NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.title"),
+				NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.text",
+						new String[] {"needed", "filename"},
+						new String[] {
+								Long.toString(neededSpace - availableSpace),
+								targetFilename}),
+				NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.shortText",
+						"filename", targetFilename),
+				(short) 0));
+	}
 }
