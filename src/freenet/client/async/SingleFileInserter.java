@@ -28,6 +28,7 @@ import freenet.keys.FreenetURI;
 import freenet.keys.SSKBlock;
 import freenet.l10n.NodeL10n;
 import freenet.node.useralerts.SimpleUserAlert;
+import freenet.support.Fields;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
@@ -97,6 +98,7 @@ class SingleFileInserter implements ClientPutState, Serializable {
 	// these objects into sets etc when we need to.
 	
 	private final int hashCode;
+	private boolean discSpaceAlertShowed;
 	
 	@Override
 	public int hashCode() {
@@ -1102,15 +1104,25 @@ class SingleFileInserter implements ClientPutState, Serializable {
     }
 
     private void discSpaceAlert(ClientContext context, long neededSpace, long availableSpace) {
-		context.postUserAlert(new SimpleUserAlert(true,
-				NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.title"),
-				NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.text",
-						new String[] {"needed", "filename"},
-						new String[] {
-								Long.toString(neededSpace - availableSpace),
-								targetFilename}),
-				NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.shortText",
-						"filename", targetFilename),
-				(short) 0));
-	}
+        if (discSpaceAlertShowed) {
+            return;
+        }
+        discSpaceAlertShowed = true;
+
+        String needed = Fields.longToString(neededSpace - availableSpace, true);
+        if (!needed.endsWith("iB")) {
+            needed += "B";
+        }
+
+        context.postUserAlert(new SimpleUserAlert(true,
+                NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.title"),
+                NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.text",
+                        new String[] {"needed", "filename"},
+                        new String[] {
+                                needed,
+                                targetFilename}),
+                NodeL10n.getBase().getString("SingleFileInserter.alert.notEnoughDiskSpace.shortText",
+                        "filename", targetFilename),
+                (short) 0));
+    }
 }
