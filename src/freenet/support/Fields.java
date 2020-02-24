@@ -802,6 +802,16 @@ public abstract class Fields {
 		return ret;
 	}
 
+	public static long binaryRound(long val) {
+		long multiplier = 1;
+		for (int i = 1; i < MULTIPLES.length; i += 2) {
+			if (val > MULTIPLES[i] * 2) {
+				multiplier = MULTIPLES[i];
+			}
+		}
+		return val - val % multiplier;
+	}
+
 	public static String intToString(int val, Dimension dimension) {
 		switch (dimension) {
 			case NOT:

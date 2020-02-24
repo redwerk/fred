@@ -410,6 +410,19 @@ public class FieldsTest extends TestCase {
 		}
 	}
 
+	public void testLongToString() {
+		assertEquals("1025", Fields.longToString(1025, true));
+		assertEquals("2049", Fields.longToString(2049, true));
+	}
+
+	public void testBinaryRoundLongToString() {
+		assertEquals("5", Fields.longToString(Fields.binaryRound(5), true));
+		assertEquals("1025", Fields.longToString(Fields.binaryRound(1025), true));
+		assertEquals("2KiB", Fields.longToString(Fields.binaryRound(2049), true));
+		assertEquals("2MiB", Fields.longToString(Fields.binaryRound(1024 * 1024 * 2 + 1024), true));
+		assertEquals("2GiB", Fields.longToString(Fields.binaryRound(1024L * 1024 * 1024 * 2 + 1024), true));
+	}
+
 	private String generateDigits(Random r, int count) {
 		StringBuffer sb = new StringBuffer(count);
 		for(int i=0;i<count;i++) {

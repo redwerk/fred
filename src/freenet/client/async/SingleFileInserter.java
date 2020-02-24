@@ -1109,7 +1109,7 @@ class SingleFileInserter implements ClientPutState, Serializable {
         }
         discSpaceAlertShowed = true;
 
-        String needed = Fields.longToString(neededSpace - availableSpace, true);
+        String needed = Fields.longToString(Fields.binaryRound(neededSpace - availableSpace), true);
         if (!needed.endsWith("iB")) {
             needed += "B";
         }
